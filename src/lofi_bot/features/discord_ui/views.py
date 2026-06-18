@@ -10,6 +10,32 @@ from lofi_bot.features.catalog.categories import (
 from lofi_bot.features.guild_settings.repository import GuildSettingsRepository
 from lofi_bot.features.playback.manager import PlayerManager
 
+PROGRESS_BAR_SEGMENTS = 20
+
+
+def format_duration(seconds: int) -> str:
+    seconds = max(0, seconds)
+    minutes, remaining_seconds = divmod(seconds, 60)
+    return f"{minutes}:{remaining_seconds:02d}"
+
+
+def format_progress_bar(elapsed_seconds: int, duration_seconds: int) -> str:
+    duration_seconds = max(0, duration_seconds)
+    elapsed_seconds = max(0, elapsed_seconds)
+    if duration_seconds > 0:
+        elapsed_seconds = min(elapsed_seconds, duration_seconds)
+        filled_segments = int((elapsed_seconds / duration_seconds) * PROGRESS_BAR_SEGMENTS)
+    else:
+        filled_segments = 0
+
+    filled_segments = max(0, min(PROGRESS_BAR_SEGMENTS, filled_segments))
+    empty_segments = PROGRESS_BAR_SEGMENTS - filled_segments
+    bar = "#" * filled_segments + "-" * empty_segments
+    return (
+        f"`{bar}` "
+        f"{format_duration(elapsed_seconds)} / {format_duration(duration_seconds)}"
+    )
+
 
 class SkipButton(discord.ui.Button):
     def __init__(self) -> None:
@@ -82,6 +108,12 @@ async def build_panel_embed(
     else:
         value = f"[{track.title}]({track.share_url})\nby {track.artist}"
         embed.add_field(name="Now Playing", value=value, inline=False)
+        elapsed_seconds = player_manager.current_track_elapsed_seconds(guild_id) or 0
+        embed.add_field(
+            name="Progress",
+            value=format_progress_bar(elapsed_seconds, track.duration_seconds),
+            inline=False,
+        )
         if track.license_url:
             embed.add_field(name="License", value=track.license_url, inline=False)
 

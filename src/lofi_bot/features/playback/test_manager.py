@@ -34,6 +34,8 @@ class FakePlayer:
         self.category_slug: str | None = None
         self.volume: float | None = None
         self.track_changed_callback = None
+        self.current_track = None
+        self.elapsed_seconds: int | None = None
 
     async def stop(self) -> None:
         self.stopped = True
@@ -49,6 +51,9 @@ class FakePlayer:
 
     def set_track_changed_callback(self, callback) -> None:
         self.track_changed_callback = callback
+
+    def current_track_elapsed_seconds(self) -> int | None:
+        return self.elapsed_seconds
 
 
 async def test_skip_returns_false_for_disconnected_player() -> None:
@@ -132,6 +137,20 @@ async def test_set_track_changed_callback_updates_existing_players() -> None:
     manager.set_track_changed_callback(refresh_panel)
 
     assert player.track_changed_callback is refresh_panel
+
+
+def test_current_track_elapsed_seconds_returns_player_elapsed_time() -> None:
+    manager = PlayerManager(
+        tracks=None,
+        guild_settings=FakeSettingsRepository(),
+        default_category="chill",
+    )
+    player = FakePlayer(is_active=True)
+    player.elapsed_seconds = 12
+    manager._players[123] = player
+
+    assert manager.current_track_elapsed_seconds(123) == 12
+    assert manager.current_track_elapsed_seconds(456) is None
 
 
 class FakeMember:

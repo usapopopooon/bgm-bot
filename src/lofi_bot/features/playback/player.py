@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Awaitable, Callable
+from time import monotonic
 
 import discord
 
@@ -12,6 +13,7 @@ from lofi_bot.features.guild_settings.repository import GuildSettingsRepository
 
 LOGGER = logging.getLogger(__name__)
 TrackChangedCallback = Callable[[int], Awaitable[None]]
+PROGRESS_REFRESH_INTERVAL_SECONDS = 15.0
 
 
 def clamp_volume(volume: float) -> float:
@@ -39,7 +41,9 @@ class GuildPlayer:
         self._lock = asyncio.Lock()
         self._stopped = False
         self._retry_task: asyncio.Task[None] | None = None
+        self._progress_task: asyncio.Task[None] | None = None
         self.current_track: Track | None = None
+        self._current_track_started_at: float | None = None
 
     @property
     def category_slug(self) -> str:
@@ -53,6 +57,11 @@ class GuildPlayer:
     def is_active(self) -> bool:
         return not self._stopped and self.voice_client.is_connected()
 
+    def current_track_elapsed_seconds(self) -> int | None:
+        if self.current_track is None or self._current_track_started_at is None:
+            return None
+        return max(0, int(monotonic() - self._current_track_started_at))
+
     def set_volume(self, volume: float) -> None:
         self._volume = clamp_volume(volume)
         source = getattr(self.voice_client, "source", None)
@@ -61,6 +70,7 @@ class GuildPlayer:
 
     def set_track_changed_callback(self, callback: TrackChangedCallback | None) -> None:
         self._on_track_changed = callback
+        self._restart_progress_updates()
 
     async def set_category(self, category_slug: str) -> None:
         self._category_slug = category_slug
@@ -86,6 +96,7 @@ class GuildPlayer:
             await self.voice_client.disconnect(force=True)
         if self._retry_task is not None:
             self._retry_task.cancel()
+        self._cancel_progress_updates()
 
     async def play_next(self) -> None:
         async with self._lock:
@@ -179,7 +190,44 @@ class GuildPlayer:
 
     def _set_current_track(self, track: Track | None) -> None:
         self.current_track = track
+        self._current_track_started_at = monotonic() if track is not None else None
+        self._restart_progress_updates()
         self._notify_track_changed()
+
+    def _restart_progress_updates(self) -> None:
+        self._cancel_progress_updates()
+        if (
+            self.current_track is None
+            or self.current_track.duration_seconds <= 0
+            or self._on_track_changed is None
+        ):
+            return
+        self._progress_task = asyncio.create_task(
+            self._refresh_progress_until_track_finishes(self.current_track)
+        )
+
+    def _cancel_progress_updates(self) -> None:
+        if self._progress_task is not None and not self._progress_task.done():
+            self._progress_task.cancel()
+        self._progress_task = None
+
+    async def _refresh_progress_until_track_finishes(self, track: Track) -> None:
+        try:
+            while self.current_track is track and not self._stopped:
+                elapsed = self.current_track_elapsed_seconds()
+                if elapsed is None:
+                    return
+
+                remaining = track.duration_seconds - elapsed
+                if remaining <= 0:
+                    return
+
+                await asyncio.sleep(min(PROGRESS_REFRESH_INTERVAL_SECONDS, remaining))
+                if self.current_track is not track or self._stopped:
+                    return
+                self._notify_track_changed()
+        except asyncio.CancelledError:
+            pass
 
     def _notify_track_changed(self) -> None:
         if self._on_track_changed is None:
