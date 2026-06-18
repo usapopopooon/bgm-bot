@@ -10,7 +10,12 @@ services:
     environment:
       DISCORD_TOKEN: ${DISCORD_TOKEN:?}
       JAMENDO_CLIENT_ID: ${JAMENDO_CLIENT_ID:?}
-      DATABASE_URL: ${DATABASE_URL:-postgresql://lofi:${SERVICE_PASSWORD_POSTGRES:-${POSTGRES_PASSWORD:-change-me}}@lofi-postgres:5432/lofi}
+      DATABASE_URL: ${DATABASE_URL:-}
+      POSTGRES_HOST: ${POSTGRES_HOST:-lofi-postgres}
+      POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+      POSTGRES_DB: lofi
+      POSTGRES_USER: lofi
+      POSTGRES_PASSWORD: ${SERVICE_PASSWORD_POSTGRES}
       DEFAULT_CATEGORY: ${DEFAULT_CATEGORY:-lofi}
       DISCORD_GUILD_ID: ${DISCORD_GUILD_ID:-}
       JAMENDO_REFRESH_HOUR: ${JAMENDO_REFRESH_HOUR:-4}
@@ -38,7 +43,7 @@ services:
     environment:
       POSTGRES_DB: lofi
       POSTGRES_USER: lofi
-      POSTGRES_PASSWORD: ${SERVICE_PASSWORD_POSTGRES:-${POSTGRES_PASSWORD:-change-me}}
+      POSTGRES_PASSWORD: ${SERVICE_PASSWORD_POSTGRES}
     volumes:
       - postgres-data:/var/lib/postgresql/data
     networks:

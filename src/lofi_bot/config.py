@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from urllib.parse import quote
 
 from lofi_bot.features.catalog.categories import CATEGORIES, DEFAULT_CATEGORY
 
@@ -33,6 +34,23 @@ def _postgres_url_for_asyncpg(value: str) -> str:
     return value
 
 
+def _database_url() -> str:
+    database_url = os.getenv("DATABASE_URL", "").strip()
+    if database_url:
+        return _postgres_url_for_asyncpg(database_url)
+
+    user = os.getenv("POSTGRES_USER", "lofi").strip() or "lofi"
+    password = _required("POSTGRES_PASSWORD")
+    host = os.getenv("POSTGRES_HOST", "lofi-postgres").strip() or "lofi-postgres"
+    port = os.getenv("POSTGRES_PORT", "5432").strip() or "5432"
+    database = os.getenv("POSTGRES_DB", "lofi").strip() or "lofi"
+
+    return (
+        f"postgresql://{quote(user, safe='')}:{quote(password, safe='')}"
+        f"@{host}:{port}/{quote(database, safe='')}"
+    )
+
+
 @dataclass(frozen=True)
 class Settings:
     discord_token: str
@@ -55,7 +73,7 @@ def load_settings() -> Settings:
     return Settings(
         discord_token=_required("DISCORD_TOKEN"),
         jamendo_client_id=_required("JAMENDO_CLIENT_ID"),
-        database_url=_postgres_url_for_asyncpg(_required("DATABASE_URL")),
+        database_url=_database_url(),
         default_category=default_category,
         jamendo_refresh_hour=int(os.getenv("JAMENDO_REFRESH_HOUR", "4")),
         refresh_timezone=os.getenv("REFRESH_TIMEZONE", "Asia/Tokyo"),
