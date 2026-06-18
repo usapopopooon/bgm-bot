@@ -1,0 +1,52 @@
+services:
+  bot:
+    build: .
+    restart: unless-stopped
+    mem_limit: 256m
+    memswap_limit: 256m
+    cpus: "0.50"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DISCORD_TOKEN: ${DISCORD_TOKEN:?}
+      JAMENDO_CLIENT_ID: ${JAMENDO_CLIENT_ID:?}
+      DATABASE_URL: postgresql://lofi:${POSTGRES_PASSWORD:?}@db:5432/lofi
+      DEFAULT_CATEGORY: ${DEFAULT_CATEGORY:-lofi}
+      DISCORD_GUILD_ID: ${DISCORD_GUILD_ID:-}
+      JAMENDO_REFRESH_HOUR: ${JAMENDO_REFRESH_HOUR:-4}
+      REFRESH_TIMEZONE: ${REFRESH_TIMEZONE:-Asia/Tokyo}
+      JAMENDO_LIMIT_PER_CATEGORY: ${JAMENDO_LIMIT_PER_CATEGORY:-200}
+      SYNC_COMMANDS: ${SYNC_COMMANDS:-true}
+
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    mem_limit: 256m
+    memswap_limit: 256m
+    cpus: "0.50"
+    shm_size: 64mb
+    command:
+      - postgres
+      - -c
+      - shared_buffers=64MB
+      - -c
+      - work_mem=4MB
+      - -c
+      - maintenance_work_mem=32MB
+      - -c
+      - max_connections=20
+    environment:
+      POSTGRES_DB: lofi
+      POSTGRES_USER: lofi
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lofi -d lofi"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres-data:

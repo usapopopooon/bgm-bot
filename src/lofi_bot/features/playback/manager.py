@@ -1,0 +1,89 @@
+from __future__ import annotations
+
+import logging
+
+import discord
+
+from lofi_bot.features.catalog.categories import get_category
+from lofi_bot.features.catalog.models import Track
+from lofi_bot.features.catalog.repository import CatalogRepository
+from lofi_bot.features.guild_settings.repository import GuildSettingsRepository
+from lofi_bot.features.playback.player import GuildPlayer
+
+LOGGER = logging.getLogger(__name__)
+
+
+class PlayerManager:
+    def __init__(
+        self,
+        tracks: CatalogRepository,
+        guild_settings: GuildSettingsRepository,
+        default_category: str,
+    ) -> None:
+        self._tracks = tracks
+        self._guild_settings = guild_settings
+        self._default_category = default_category
+        self._players: dict[int, GuildPlayer] = {}
+
+    async def connect(self, guild: discord.Guild, channel: discord.VoiceChannel) -> GuildPlayer:
+        settings = await self._guild_settings.get_or_create(guild.id, self._default_category)
+        await self._guild_settings.update_voice_channel(guild.id, channel.id)
+
+        voice_client = guild.voice_client
+        if voice_client is not None and voice_client.is_connected():
+            if voice_client.channel != channel:
+                await voice_client.move_to(channel)
+        else:
+            voice_client = await channel.connect(reconnect=True, timeout=20)
+
+        player = self._players.get(guild.id)
+        if player is None:
+            player = GuildPlayer(
+                guild_id=guild.id,
+                voice_client=voice_client,
+                tracks=self._tracks,
+                guild_settings=self._guild_settings,
+                category_slug=settings.selected_category,
+            )
+            self._players[guild.id] = player
+        else:
+            player.voice_client = voice_client
+
+        return player
+
+    async def start_saved_category(self, guild: discord.Guild) -> None:
+        player = self._players.get(guild.id)
+        if player is None:
+            return
+        await player.play_next()
+
+    async def set_category(self, guild_id: int, category_slug: str) -> bool:
+        get_category(category_slug)
+        player = self._players.get(guild_id)
+        await self._guild_settings.update_selected_category(guild_id, category_slug)
+        if player is None or not player.is_active:
+            return False
+        await player.set_category(category_slug)
+        return True
+
+    async def skip(self, guild_id: int) -> bool:
+        player = self._players.get(guild_id)
+        if player is None or not player.is_active:
+            return False
+        await player.skip()
+        return True
+
+    async def leave(self, guild_id: int) -> bool:
+        player = self._players.pop(guild_id, None)
+        if player is None:
+            return False
+        await player.stop()
+        return True
+
+    async def close_all(self) -> None:
+        for guild_id in list(self._players):
+            await self.leave(guild_id)
+
+    def current_track(self, guild_id: int) -> Track | None:
+        player = self._players.get(guild_id)
+        return player.current_track if player is not None else None
