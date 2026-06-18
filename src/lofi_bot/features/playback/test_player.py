@@ -7,23 +7,49 @@ from lofi_bot.features.playback.player import GuildPlayer
 
 
 class FakeVoiceClient:
-    def __init__(self, *, play_raises: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        play_raises: bool = False,
+        playing: bool = False,
+        paused: bool = False,
+    ) -> None:
         self.play_raises = play_raises
         self.played_sources: list[object] = []
+        self._playing = playing
+        self._paused = paused
+        self.pause_calls = 0
+        self.resume_calls = 0
 
     def is_connected(self) -> bool:
         return True
 
     def is_playing(self) -> bool:
-        return False
+        return self._playing
 
     def is_paused(self) -> bool:
-        return False
+        return self._paused
 
     def play(self, source: object, *, after) -> None:  # noqa: ANN001
         if self.play_raises:
             raise RuntimeError("cannot play")
         self.played_sources.append(source)
+        self._playing = True
+        self._paused = False
+
+    def pause(self) -> None:
+        self.pause_calls += 1
+        self._playing = False
+        self._paused = True
+
+    def resume(self) -> None:
+        self.resume_calls += 1
+        self._playing = True
+        self._paused = False
+
+    def stop(self) -> None:
+        self._playing = False
+        self._paused = False
 
 
 class FakeTrackRepository:
@@ -82,6 +108,48 @@ async def test_track_change_notifies_panel_refresh_callback() -> None:
     await asyncio.sleep(0)
 
     assert calls == [123]
+
+
+async def test_toggle_pause_pauses_and_resumes_playback() -> None:
+    voice_client = FakeVoiceClient(playing=True)
+    player = GuildPlayer(
+        guild_id=123,
+        voice_client=voice_client,
+        tracks=None,
+        guild_settings=None,
+        category_slug="chill",
+        volume=0.01,
+    )
+
+    paused = await player.toggle_pause()
+
+    assert paused is True
+    assert voice_client.pause_calls == 1
+    assert player.is_paused is True
+
+    resumed = await player.toggle_pause()
+
+    assert resumed is True
+    assert voice_client.resume_calls == 1
+    assert player.is_paused is False
+
+
+async def test_toggle_pause_returns_false_when_not_playing() -> None:
+    voice_client = FakeVoiceClient()
+    player = GuildPlayer(
+        guild_id=123,
+        voice_client=voice_client,
+        tracks=None,
+        guild_settings=None,
+        category_slug="chill",
+        volume=0.01,
+    )
+
+    toggled = await player.toggle_pause()
+
+    assert toggled is False
+    assert voice_client.pause_calls == 0
+    assert voice_client.resume_calls == 0
 
 
 async def test_play_next_does_not_leave_stale_current_track_after_play_failures() -> None:

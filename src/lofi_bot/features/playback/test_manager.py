@@ -39,12 +39,19 @@ class FakePlayer:
         self.volume: float | None = None
         self.track_changed_callback = None
         self.current_track = None
+        self.is_paused = False
+        self.pause_toggled = False
 
     async def stop(self) -> None:
         self.stopped = True
 
     async def skip(self) -> None:
         self.skipped = True
+
+    async def toggle_pause(self) -> bool:
+        self.pause_toggled = True
+        self.is_paused = not self.is_paused
+        return True
 
     async def set_category(self, category_slug: str) -> None:
         self.category_slug = category_slug
@@ -69,6 +76,37 @@ async def test_skip_returns_false_for_disconnected_player() -> None:
 
     assert result is False
     assert player.skipped is False
+
+
+async def test_toggle_pause_returns_false_for_disconnected_player() -> None:
+    manager = PlayerManager(
+        tracks=None,
+        guild_settings=FakeSettingsRepository(),
+        default_category="chill",
+    )
+    player = FakePlayer(is_active=False)
+    manager._players[123] = player
+
+    result = await manager.toggle_pause(123)
+
+    assert result is False
+    assert player.pause_toggled is False
+
+
+async def test_toggle_pause_updates_active_player() -> None:
+    manager = PlayerManager(
+        tracks=None,
+        guild_settings=FakeSettingsRepository(),
+        default_category="chill",
+    )
+    player = FakePlayer(is_active=True)
+    manager._players[123] = player
+
+    result = await manager.toggle_pause(123)
+
+    assert result is True
+    assert player.pause_toggled is True
+    assert manager.is_paused(123) is True
 
 
 async def test_set_category_still_persists_but_does_not_play_disconnected_player() -> None:

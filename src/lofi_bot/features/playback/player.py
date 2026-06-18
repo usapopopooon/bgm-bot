@@ -55,6 +55,10 @@ class GuildPlayer:
     def is_active(self) -> bool:
         return not self._stopped and self.voice_client.is_connected()
 
+    @property
+    def is_paused(self) -> bool:
+        return self.is_active and self.voice_client.is_paused()
+
     def set_volume(self, volume: float) -> None:
         self._volume = clamp_volume(volume)
         source = getattr(self.voice_client, "source", None)
@@ -79,6 +83,17 @@ class GuildPlayer:
             self.voice_client.stop()
         else:
             await self.play_next()
+
+    async def toggle_pause(self) -> bool:
+        if self.voice_client.is_paused():
+            self.voice_client.resume()
+            self._notify_track_changed()
+            return True
+        if self.voice_client.is_playing():
+            self.voice_client.pause()
+            self._notify_track_changed()
+            return True
+        return False
 
     async def stop(self) -> None:
         self._stopped = True

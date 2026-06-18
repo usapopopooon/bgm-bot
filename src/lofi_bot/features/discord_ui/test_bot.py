@@ -72,6 +72,9 @@ class FakePlayerManager:
     def current_track(self, guild_id: int):
         return None
 
+    def is_paused(self, guild_id: int) -> bool:
+        return False
+
 
 class FakeGuild:
     def __init__(self, guild_id: int) -> None:

@@ -85,6 +85,12 @@ class PlayerManager:
         await player.skip()
         return True
 
+    async def toggle_pause(self, guild_id: int) -> bool:
+        player = self._players.get(guild_id)
+        if player is None or not player.is_active:
+            return False
+        return await player.toggle_pause()
+
     async def set_volume(self, guild_id: int, volume: float) -> bool:
         volume = clamp_volume(volume)
         await self._guild_settings.update_volume(guild_id, volume)
@@ -140,3 +146,7 @@ class PlayerManager:
     def current_track(self, guild_id: int) -> Track | None:
         player = self._players.get(guild_id)
         return player.current_track if player is not None else None
+
+    def is_paused(self, guild_id: int) -> bool:
+        player = self._players.get(guild_id)
+        return player.is_paused if player is not None else False

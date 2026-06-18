@@ -35,13 +35,7 @@ class LofiDiscordBot(commands.Bot):
         self._restored_stay_connected = False
 
     async def setup_hook(self) -> None:
-        self.add_view(
-            PlayerControlView(
-                self.guild_settings,
-                self.player_manager,
-                default_category=self.settings.default_category,
-            )
-        )
+        self.add_view(self._build_control_view())
         self.tree.add_command(
             app_commands.Command(
                 name="vc",
@@ -265,14 +259,20 @@ class LofiDiscordBot(commands.Bot):
         )
         message = await interaction.followup.send(
             embed=embed,
-            view=PlayerControlView(
-                self.guild_settings,
-                self.player_manager,
-                default_category=self.settings.default_category,
-            ),
+            view=self._build_control_view(interaction.guild.id),
             wait=True,
         )
         await self.guild_settings.update_panel(interaction.guild.id, message.channel.id, message.id)
+
+    def _build_control_view(self, guild_id: int | None = None) -> PlayerControlView:
+        return PlayerControlView(
+            self.guild_settings,
+            self.player_manager,
+            default_category=self.settings.default_category,
+            is_paused=(
+                guild_id is not None and self.player_manager.is_paused(guild_id)
+            ),
+        )
 
     @app_commands.default_permissions(administrator=True)
     @app_commands.describe(percent="1〜100の音量")
@@ -365,11 +365,7 @@ class LofiDiscordBot(commands.Bot):
             )
             await message.edit(
                 embed=embed,
-                view=PlayerControlView(
-                    self.guild_settings,
-                    self.player_manager,
-                    default_category=self.settings.default_category,
-                ),
+                view=self._build_control_view(guild_id),
             )
         except discord.NotFound:
             LOGGER.warning("Panel message not found guild=%s", guild_id)

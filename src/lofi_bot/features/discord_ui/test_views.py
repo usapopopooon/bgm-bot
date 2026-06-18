@@ -22,14 +22,18 @@ class FakeGuildSettingsRepository:
 
 
 class FakePlayerManager:
-    def __init__(self, track: Track | None = None) -> None:
+    def __init__(self, track: Track | None = None, is_paused: bool = False) -> None:
         self.track = track
+        self._is_paused = is_paused
 
     def current_track(self, guild_id: int):
         return self.track
 
+    def is_paused(self, guild_id: int) -> bool:
+        return self._is_paused
 
-async def test_panel_embed_includes_source_link_without_category_field() -> None:
+
+async def test_panel_embed_uses_japanese_labels_without_admin_status() -> None:
     embed = await build_panel_embed(
         guild_id=123,
         guild_settings=FakeGuildSettingsRepository(),
@@ -41,11 +45,13 @@ async def test_panel_embed_includes_source_link_without_category_field() -> None
 
     assert "Category" not in fields
     assert "Volume" not in fields
-    assert fields["Source"] == (
-        "[Jamendo: Chill](https://www.jamendo.com/search?qs=q%3Dchill+relaxation+calm+instrumental)"
+    assert "Stay" not in fields
+    assert embed.title == "BGMボット"
+    assert embed.description == "チル系のボーカルなし曲をランダムに再生します。"
+    assert fields["検索元"] == (
+        "[Jamendo: チル](https://www.jamendo.com/search?qs=q%3Dchill+relaxation+calm+instrumental)"
     )
-    assert fields["Stay"] == "OFF"
-    assert fields["Now Playing"] == "準備中"
+    assert fields["再生中"] == "準備中"
     assert "Progress" not in fields
     assert embed.footer.text == "パネルが流れたら /panel で再投稿できます。"
 
@@ -71,16 +77,34 @@ async def test_panel_embed_includes_current_track_without_progress_bar() -> None
 
     fields = {field.name: field.value for field in embed.fields}
 
-    assert fields["Now Playing"] == "[Morning Loop](https://example.com/track)\nby Cafe Artist"
+    assert fields["再生中"] == "[Morning Loop](https://example.com/track)\nby Cafe Artist"
     assert "Progress" not in fields
 
 
-def test_player_control_view_only_includes_skip_button() -> None:
+def test_player_control_view_includes_pause_and_next_buttons() -> None:
     view = PlayerControlView(
         guild_settings=FakeGuildSettingsRepository(),
         player_manager=FakePlayerManager(),
     )
 
+    assert [item.label for item in view.children] == [
+        "一時停止",
+        "次の曲へ",
+    ]
     assert [item.custom_id for item in view.children] == [
+        "lofi_bot:pause",
         "lofi_bot:skip",
+    ]
+
+
+def test_player_control_view_shows_resume_when_paused() -> None:
+    view = PlayerControlView(
+        guild_settings=FakeGuildSettingsRepository(),
+        player_manager=FakePlayerManager(is_paused=True),
+        is_paused=True,
+    )
+
+    assert [item.label for item in view.children] == [
+        "再開",
+        "次の曲へ",
     ]
