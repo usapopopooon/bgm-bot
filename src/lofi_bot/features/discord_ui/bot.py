@@ -307,7 +307,11 @@ class LofiDiscordBot(commands.Bot):
         ):
             return
 
-        left = await self.player_manager.leave(interaction.guild.id)
+        left = await self.player_manager.leave(
+            interaction.guild.id,
+            clear_saved_channel=True,
+            disable_stay_connected=True,
+        )
         message = "VCから退出しました。" if left else "接続中ではありません。"
 
         await interaction.response.send_message(message, ephemeral=True)

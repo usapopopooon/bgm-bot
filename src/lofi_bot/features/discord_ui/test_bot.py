@@ -24,7 +24,7 @@ class FakePlayerManager:
         self.stay_connected: list[tuple[int, bool]] = []
         self.leave_if_alone_calls: list[int] = []
         self.left_alone = False
-        self.leave_calls: list[int] = []
+        self.leave_calls: list[tuple[int, bool, bool]] = []
         self.left = True
 
     async def connect(self, guild, channel):  # noqa: ANN001, ANN201
@@ -44,8 +44,14 @@ class FakePlayerManager:
         self.leave_if_alone_calls.append(guild.id)
         return self.left_alone
 
-    async def leave(self, guild_id: int) -> bool:
-        self.leave_calls.append(guild_id)
+    async def leave(
+        self,
+        guild_id: int,
+        *,
+        clear_saved_channel: bool = False,
+        disable_stay_connected: bool = False,
+    ) -> bool:
+        self.leave_calls.append((guild_id, clear_saved_channel, disable_stay_connected))
         return self.left
 
 
@@ -295,7 +301,7 @@ async def test_leave_command_leaves_for_admin() -> None:
 
     await LofiDiscordBot._leave_command(bot, interaction)
 
-    assert player_manager.leave_calls == [123]
+    assert player_manager.leave_calls == [(123, True, True)]
     assert refreshed == [123]
     assert interaction.response.messages == [
         ("VCから退出しました。", True),

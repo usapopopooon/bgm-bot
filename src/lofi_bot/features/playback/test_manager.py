@@ -11,6 +11,7 @@ class FakeSettingsRepository:
         self.selected_categories: list[tuple[int, str]] = []
         self.volumes: list[tuple[int, float]] = []
         self.stay_updates: list[tuple[int, bool]] = []
+        self.cleared_voice_channels: list[int] = []
 
     async def get_or_create(self, guild_id: int, default_category: str):
         return SimpleNamespace(stay_connected=self.stay_connected)
@@ -24,6 +25,9 @@ class FakeSettingsRepository:
     async def update_stay_connected(self, guild_id: int, stay_connected: bool) -> None:
         self.stay_connected = stay_connected
         self.stay_updates.append((guild_id, stay_connected))
+
+    async def clear_voice_channel(self, guild_id: int) -> None:
+        self.cleared_voice_channels.append(guild_id)
 
 
 class FakePlayer:
@@ -201,6 +205,7 @@ async def test_leave_if_alone_disconnects_when_only_bots_remain() -> None:
     assert player.stopped is True
     assert manager._players == {}
     assert refreshed == [123]
+    assert settings.cleared_voice_channels == [123]
 
 
 async def test_leave_if_alone_keeps_connected_when_stay_is_enabled() -> None:
@@ -250,3 +255,44 @@ async def test_set_stay_connected_persists_setting() -> None:
     await manager.set_stay_connected(123, True)
 
     assert settings.stay_updates == [(123, True)]
+
+
+async def test_manual_leave_can_clear_saved_channel_and_disable_stay() -> None:
+    settings = FakeSettingsRepository(stay_connected=True)
+    manager = PlayerManager(
+        tracks=None,
+        guild_settings=settings,
+        default_category="chill",
+    )
+    player = FakePlayer(is_active=True)
+    manager._players[123] = player
+
+    result = await manager.leave(
+        123,
+        clear_saved_channel=True,
+        disable_stay_connected=True,
+    )
+
+    assert result is True
+    assert player.stopped is True
+    assert settings.cleared_voice_channels == [123]
+    assert settings.stay_updates == [(123, False)]
+
+
+async def test_manual_leave_clears_saved_session_even_when_not_connected() -> None:
+    settings = FakeSettingsRepository(stay_connected=True)
+    manager = PlayerManager(
+        tracks=None,
+        guild_settings=settings,
+        default_category="chill",
+    )
+
+    result = await manager.leave(
+        123,
+        clear_saved_channel=True,
+        disable_stay_connected=True,
+    )
+
+    assert result is False
+    assert settings.cleared_voice_channels == [123]
+    assert settings.stay_updates == [(123, False)]

@@ -46,6 +46,17 @@ class GuildSettingsRepository:
             voice_channel_id,
         )
 
+    async def clear_voice_channel(self, guild_id: int) -> None:
+        await self._pool.execute(
+            """
+            UPDATE guild_settings
+            SET voice_channel_id = NULL,
+                updated_at = now()
+            WHERE guild_id = $1
+            """,
+            guild_id,
+        )
+
     async def update_selected_category(self, guild_id: int, category_slug: str) -> None:
         await self._pool.execute(
             """

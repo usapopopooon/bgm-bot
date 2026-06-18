@@ -226,7 +226,7 @@ Slash commands:
 - Progress: `#####--------------- 0:50 / 3:20` 形式の再生時間バー
 - `Skip`: 次の曲へ
 
-`/vc` `/volume` `/stay` `/leave` は管理者のみ実行できます。`/stay enabled:false` でStayをOFFにした時、VCが空なら自動退出します。カテゴリはchill固定です。既存環境に `DEFAULT_CATEGORY` が残っていても無視されます。
+`/vc` `/volume` `/stay` `/leave` は管理者のみ実行できます。`/stay enabled:false` でStayをOFFにした時、VCが空なら自動退出します。`/leave` はStayをOFFにして保存済みVCもクリアするため、次回起動時に自動復帰しません。カテゴリはchill固定です。既存環境に `DEFAULT_CATEGORY` が残っていても無視されます。
 
 ## Development
 

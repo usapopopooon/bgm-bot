@@ -42,6 +42,8 @@ class GuildPlayer:
         self._stopped = False
         self._retry_task: asyncio.Task[None] | None = None
         self._progress_task: asyncio.Task[None] | None = None
+        self._track_changed_task: asyncio.Task[None] | None = None
+        self._track_changed_pending = False
         self.current_track: Track | None = None
         self._current_track_started_at: float | None = None
 
@@ -108,10 +110,10 @@ class GuildPlayer:
         if self.voice_client.is_playing() or self.voice_client.is_paused():
             return
 
+        self._set_current_track(None)
         for _ in range(5):
             track = await self._tracks.get_random_track(self.guild_id, self._category_slug)
             if track is None or track.id is None:
-                self._set_current_track(None)
                 LOGGER.warning(
                     "No playable tracks for guild=%s category=%s",
                     self.guild_id,
@@ -123,9 +125,9 @@ class GuildPlayer:
             try:
                 self._cancel_retry()
                 source = self._create_source(track)
-                self._set_current_track(track)
                 await self._tracks.record_play(self.guild_id, track.id, self._category_slug)
                 self.voice_client.play(source, after=self._after_play(track))
+                self._set_current_track(track)
                 LOGGER.info(
                     "Playing guild=%s category=%s track=%s artist=%s",
                     self.guild_id,
@@ -232,11 +234,25 @@ class GuildPlayer:
     def _notify_track_changed(self) -> None:
         if self._on_track_changed is None:
             return
-        task = asyncio.create_task(self._on_track_changed(self.guild_id))
-        task.add_done_callback(self._log_track_changed_error)
+        if self._track_changed_task is not None and not self._track_changed_task.done():
+            self._track_changed_pending = True
+            return
+        self._track_changed_task = asyncio.create_task(self._run_track_changed_callback())
 
-    def _log_track_changed_error(self, task: asyncio.Task[None]) -> None:
-        try:
-            task.result()
-        except Exception:
-            LOGGER.exception("Failed to refresh panel after track change guild=%s", self.guild_id)
+    async def _run_track_changed_callback(self) -> None:
+        while True:
+            self._track_changed_pending = False
+            callback = self._on_track_changed
+            if callback is None:
+                return
+
+            try:
+                await callback(self.guild_id)
+            except Exception:
+                LOGGER.exception(
+                    "Failed to refresh panel after track change guild=%s",
+                    self.guild_id,
+                )
+
+            if not self._track_changed_pending:
+                return

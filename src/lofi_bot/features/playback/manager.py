@@ -97,8 +97,18 @@ class PlayerManager:
     async def set_stay_connected(self, guild_id: int, stay_connected: bool) -> None:
         await self._guild_settings.update_stay_connected(guild_id, stay_connected)
 
-    async def leave(self, guild_id: int) -> bool:
+    async def leave(
+        self,
+        guild_id: int,
+        *,
+        clear_saved_channel: bool = False,
+        disable_stay_connected: bool = False,
+    ) -> bool:
         player = self._players.pop(guild_id, None)
+        if clear_saved_channel:
+            await self._guild_settings.clear_voice_channel(guild_id)
+        if disable_stay_connected:
+            await self._guild_settings.update_stay_connected(guild_id, False)
         if player is None:
             return False
         await player.stop()
@@ -118,7 +128,7 @@ class PlayerManager:
         if any(not member.bot for member in members):
             return False
 
-        left = await self.leave(guild.id)
+        left = await self.leave(guild.id, clear_saved_channel=True)
         if left and self._track_changed_callback is not None:
             await self._track_changed_callback(guild.id)
         return left
