@@ -57,6 +57,7 @@ class Database:
                     ranking_category TEXT NOT NULL,
                     rank_position INTEGER NOT NULL DEFAULT 0,
                     tags TEXT[] NOT NULL DEFAULT ARRAY[]::TEXT[],
+                    instrumental_only BOOLEAN NOT NULL DEFAULT FALSE,
                     enabled BOOLEAN NOT NULL DEFAULT TRUE,
                     failure_count INTEGER NOT NULL DEFAULT 0,
                     last_failed_at TIMESTAMPTZ,
@@ -67,6 +68,9 @@ class Database:
 
                 CREATE INDEX IF NOT EXISTS idx_tracks_category_enabled_rank
                     ON tracks (ranking_category, enabled, rank_position);
+
+                ALTER TABLE tracks
+                    ADD COLUMN IF NOT EXISTS instrumental_only BOOLEAN NOT NULL DEFAULT FALSE;
 
                 CREATE TABLE IF NOT EXISTS guild_settings (
                     guild_id BIGINT PRIMARY KEY,

@@ -33,6 +33,7 @@ class CatalogRepository:
                         ranking_category,
                         rank_position,
                         tags,
+                        instrumental_only,
                         enabled,
                         fetched_at,
                         updated_at
@@ -49,6 +50,7 @@ class CatalogRepository:
                         $9,
                         $10,
                         TRUE,
+                        TRUE,
                         $11,
                         now()
                     )
@@ -62,6 +64,7 @@ class CatalogRepository:
                         duration_seconds = EXCLUDED.duration_seconds,
                         rank_position = EXCLUDED.rank_position,
                         tags = EXCLUDED.tags,
+                        instrumental_only = TRUE,
                         enabled = TRUE,
                         fetched_at = EXCLUDED.fetched_at,
                         updated_at = now()
@@ -97,6 +100,7 @@ class CatalogRepository:
             SELECT COUNT(DISTINCT ranking_category) AS category_count
             FROM tracks
             WHERE enabled = TRUE
+              AND instrumental_only = TRUE
               AND fetched_at > now() - ($1::INT * interval '1 hour')
             """,
             max_age_hours,
@@ -122,6 +126,7 @@ class CatalogRepository:
             FROM tracks
             WHERE ranking_category = $2
               AND enabled = TRUE
+              AND instrumental_only = TRUE
               AND id NOT IN (SELECT track_id FROM recent)
             ORDER BY random()
             LIMIT 1
@@ -137,6 +142,7 @@ class CatalogRepository:
                 FROM tracks
                 WHERE ranking_category = $1
                   AND enabled = TRUE
+                  AND instrumental_only = TRUE
                 ORDER BY random()
                 LIMIT 1
                 """,

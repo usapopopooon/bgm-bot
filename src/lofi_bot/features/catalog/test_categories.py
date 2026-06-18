@@ -18,16 +18,13 @@ def test_categories_are_fixed_for_dropdown() -> None:
     assert DEFAULT_CATEGORY == "lofi"
 
 
-def test_instrumental_category_uses_instrumental_filter() -> None:
-    category = get_category("instrumental")
-
-    assert category.vocalinstrumental == "instrumental"
-    assert "instrumental" in category.fuzzytags
+def test_instrumental_category_uses_instrumental_tag() -> None:
+    assert "instrumental" in get_category("instrumental").fuzzytags
 
 
 def test_category_source_url_links_to_jamendo_search() -> None:
     category = get_category("lofi")
 
     assert build_category_source_url(category) == (
-        "https://www.jamendo.com/search?qs=q%3Dlofi+chillhop+beats"
+        "https://www.jamendo.com/search?qs=q%3Dlofi+chillhop+beats+instrumental"
     )

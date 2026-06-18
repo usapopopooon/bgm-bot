@@ -42,9 +42,8 @@ class JamendoClient:
             "groupby": "artist_id",
             "type": "single albumtrack",
             "fuzzytags": " ".join(category.fuzzytags),
+            "vocalinstrumental": "instrumental",
         }
-        if category.vocalinstrumental is not None:
-            params["vocalinstrumental"] = category.vocalinstrumental
         return params
 
     async def fetch_top_tracks(self, category: RankingCategory, limit: int) -> list[Track]:

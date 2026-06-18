@@ -1,6 +1,6 @@
 # BGM Bot
 
-Discordのボイスチャンネルに接続して、Jamendoの曲をカテゴリ別にランダム再生するBotです。
+Discordのボイスチャンネルに接続して、Jamendoのボーカルなし曲をカテゴリ別にランダム再生するBotです。
 
 操作はシンプルです。ユーザーがVCに入った状態で `/vc` を実行するとBotが接続し、表示された操作パネルからカテゴリ、音量、常駐設定を操作できます。
 
@@ -9,6 +9,7 @@ Discordのボイスチャンネルに接続して、Jamendoの曲をカテゴリ
 - `/vc` で実行者がいるVCへ接続
 - ドロップダウンでカテゴリを選択
 - `lofi`, `chill`, `hiphop`, `relaxation`, `instrumental`, `beats`
+- Jamendo APIの `vocalinstrumental=instrumental` でボーカルなし曲だけを取得
 - 操作パネルから1%刻みの音量設定
 - `Skip` / `常駐` / `Leave` ボタンつき操作パネル
 - VCにBot以外のユーザーがいなくなったら自動退出
@@ -55,7 +56,7 @@ Botの再起動後
   -> 保存カテゴリの再生を再開
 
 毎日 04:00 Asia/Tokyo
-  -> Jamendo APIからカテゴリごとの上位曲を取得
+  -> Jamendo APIからカテゴリごとのボーカルなし曲を取得
   -> tracksテーブルへupsert
 ```
 
@@ -127,6 +128,7 @@ JamendoのAPIレスポンスから以下を保存します。
 - Creative CommonsライセンスURL
 - タグ
 - カテゴリ
+- ボーカルなし条件で取得したことを示す内部フラグ
 
 音源ファイル自体はDBやローカルストレージに保存しません。
 

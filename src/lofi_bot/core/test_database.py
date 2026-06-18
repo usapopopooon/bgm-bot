@@ -91,5 +91,7 @@ async def test_migrate_sets_default_volume_to_one_percent() -> None:
     statement = pool.connection.statements[0]
     assert "volume REAL NOT NULL DEFAULT 0.01" in statement
     assert "ALTER COLUMN volume SET DEFAULT 0.01" in statement
+    assert "instrumental_only BOOLEAN NOT NULL DEFAULT FALSE" in statement
+    assert "ADD COLUMN IF NOT EXISTS instrumental_only" in statement
     assert "stay_connected BOOLEAN NOT NULL DEFAULT FALSE" in statement
     assert "ADD COLUMN IF NOT EXISTS stay_connected" in statement

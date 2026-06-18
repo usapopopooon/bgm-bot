@@ -12,6 +12,7 @@ def test_build_params_uses_top_ranking_and_audio_format() -> None:
     assert params["order"] == "popularity_total"
     assert params["audioformat"] == "mp32"
     assert params["fuzzytags"] == "lofi chillhop beats"
+    assert params["vocalinstrumental"] == "instrumental"
 
 
 def test_parse_track_extracts_metadata_and_tags() -> None:

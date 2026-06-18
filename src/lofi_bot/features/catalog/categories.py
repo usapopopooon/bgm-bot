@@ -10,7 +10,6 @@ class RankingCategory:
     label: str
     description: str
     fuzzytags: tuple[str, ...]
-    vocalinstrumental: str | None = None
 
 
 DEFAULT_CATEGORY = "lofi"
@@ -46,7 +45,6 @@ CATEGORIES: dict[str, RankingCategory] = {
         label="Instrumental",
         description="Instrumental-only tracks",
         fuzzytags=("instrumental", "background", "soundtrack"),
-        vocalinstrumental="instrumental",
     ),
     "beats": RankingCategory(
         slug="beats",
@@ -66,5 +64,6 @@ def get_category(slug: str) -> RankingCategory:
 
 
 def build_category_source_url(category: RankingCategory) -> str:
-    query = " ".join(category.fuzzytags)
+    query_tags = (*category.fuzzytags, "instrumental")
+    query = " ".join(dict.fromkeys(query_tags))
     return f"{JAMENDO_SEARCH_URL}?{urlencode({'qs': f'q={query}'})}"

@@ -33,7 +33,7 @@ async def test_panel_embed_includes_category_source_link() -> None:
     fields = {field.name: field.value for field in embed.fields}
 
     assert fields["Source"] == (
-        "[Jamendo: Lofi](https://www.jamendo.com/search?qs=q%3Dlofi+chillhop+beats)"
+        "[Jamendo: Lofi](https://www.jamendo.com/search?qs=q%3Dlofi+chillhop+beats+instrumental)"
     )
     assert fields["常駐"] == "OFF"
     assert fields["Now Playing"] == "準備中"
