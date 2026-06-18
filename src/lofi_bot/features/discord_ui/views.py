@@ -183,7 +183,7 @@ class SkipButton(discord.ui.Button):
 class StayButton(discord.ui.Button):
     def __init__(self) -> None:
         super().__init__(
-            label="常駐",
+            label="Stay",
             style=discord.ButtonStyle.secondary,
             custom_id="lofi_bot:stay",
             row=1,
@@ -210,9 +210,9 @@ class StayButton(discord.ui.Button):
             player_manager=self.view.player_manager,
             default_category=self.view.default_category,
         )
-        embed.description = f"常駐を{'ON' if stay_connected else 'OFF'}にしました。"
+        embed.description = f"Stay mode is now {'ON' if stay_connected else 'OFF'}."
         if left:
-            embed.description += " VCに誰もいないため退出しました。"
+            embed.description += " Left the VC because no one else is there."
         await interaction.response.edit_message(embed=embed, view=self.view)
 
 
@@ -282,7 +282,7 @@ async def build_panel_embed(
     )
     embed.add_field(name="Volume", value=format_volume(settings.volume), inline=True)
     embed.add_field(
-        name="常駐",
+        name="Stay",
         value="ON" if settings.stay_connected else "OFF",
         inline=True,
     )
