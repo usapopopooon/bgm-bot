@@ -4,7 +4,7 @@ import logging
 
 import discord
 
-from lofi_bot.features.catalog.categories import CATEGORIES
+from lofi_bot.features.catalog.categories import CATEGORIES, build_category_source_url
 from lofi_bot.features.guild_settings.repository import GuildSettingsRepository
 from lofi_bot.features.playback.manager import PlayerManager
 
@@ -26,7 +26,7 @@ class CategorySelect(discord.ui.Select):
             for category in CATEGORIES.values()
         ]
         super().__init__(
-            placeholder="ランキングカテゴリを選択",
+            placeholder="カテゴリを選択",
             min_values=1,
             max_values=1,
             options=options,
@@ -234,10 +234,15 @@ async def build_panel_embed(
 
     embed = discord.Embed(
         title="BGM Bot",
-        description="ランキングカテゴリを選ぶと、その上位曲からランダムに再生します。",
+        description="カテゴリを選ぶと、その雰囲気に合う曲をランダムに再生します。",
         color=discord.Color.blurple(),
     )
     embed.add_field(name="Category", value=category.label, inline=True)
+    embed.add_field(
+        name="Source",
+        value=f"[Jamendo: {category.label}]({build_category_source_url(category)})",
+        inline=True,
+    )
     embed.add_field(name="Volume", value=format_volume(settings.volume), inline=True)
 
     if track is None:

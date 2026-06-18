@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from urllib.parse import urlencode
 
 
 @dataclass(frozen=True)
@@ -13,6 +14,7 @@ class RankingCategory:
 
 
 DEFAULT_CATEGORY = "lofi"
+JAMENDO_SEARCH_URL = "https://www.jamendo.com/search"
 
 CATEGORIES: dict[str, RankingCategory] = {
     "lofi": RankingCategory(
@@ -61,3 +63,8 @@ def get_category(slug: str) -> RankingCategory:
     except KeyError as error:
         allowed = ", ".join(CATEGORIES)
         raise ValueError(f"Unknown category {slug!r}. Allowed: {allowed}") from error
+
+
+def build_category_source_url(category: RankingCategory) -> str:
+    query = " ".join(category.fuzzytags)
+    return f"{JAMENDO_SEARCH_URL}?{urlencode({'qs': f'q={query}'})}"
