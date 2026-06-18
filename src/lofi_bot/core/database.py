@@ -1,6 +1,11 @@
 from __future__ import annotations
 
+import asyncio
+import logging
+
 import asyncpg
+
+LOGGER = logging.getLogger(__name__)
 
 
 class Database:
@@ -8,8 +13,25 @@ class Database:
         self._url = url
         self.pool: asyncpg.Pool | None = None
 
-    async def connect(self) -> None:
-        self.pool = await asyncpg.create_pool(self._url, min_size=1, max_size=10)
+    async def connect(self, *, attempts: int = 30, delay_seconds: float = 2.0) -> None:
+        last_error: BaseException | None = None
+        for attempt in range(1, attempts + 1):
+            try:
+                self.pool = await asyncpg.create_pool(self._url, min_size=1, max_size=5)
+                return
+            except (OSError, asyncpg.PostgresConnectionError) as error:
+                last_error = error
+                if attempt >= attempts:
+                    break
+                LOGGER.warning(
+                    "Database is not ready yet (%s/%s): %s",
+                    attempt,
+                    attempts,
+                    error,
+                )
+                await asyncio.sleep(delay_seconds)
+
+        raise RuntimeError("Database did not become ready") from last_error
 
     async def close(self) -> None:
         if self.pool is not None:

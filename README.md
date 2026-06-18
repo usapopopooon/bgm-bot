@@ -68,8 +68,8 @@ Botコンテナには `ffmpeg` を入れています。
 
 | Name | Default | Description |
 | --- | --- | --- |
-| `POSTGRES_PASSWORD` | `SERVICE_PASSWORD_POSTGRES` or `change-me` | Compose内Postgresユーザー `lofi` のパスワード。ローカル上書き用 |
-| `SERVICE_PASSWORD_POSTGRES` | Coolify generated | Coolifyの自動生成パスワード。`POSTGRES_PASSWORD` が未指定のとき使用 |
+| `SERVICE_PASSWORD_POSTGRES` | Coolify generated | Coolifyの自動生成パスワード。Coolifyではこの値を優先 |
+| `POSTGRES_PASSWORD` | `change-me` | Compose内Postgresユーザー `lofi` のパスワード。主にローカル上書き用 |
 | `DISCORD_GUILD_ID` | empty | 開発用。指定するとslash commandを対象ギルドへ即時同期 |
 | `DEFAULT_CATEGORY` | `lofi` | 初期カテゴリ |
 | `JAMENDO_REFRESH_HOUR` | `4` | 毎日同期する時刻 |
@@ -161,7 +161,7 @@ DISCORD_TOKEN=...
 JAMENDO_CLIENT_ID=...
 ```
 
-`POSTGRES_PASSWORD` は未設定でも構いません。CoolifyではCompose内の `SERVICE_PASSWORD_POSTGRES` からDBパスワードを自動生成し、`bot` と `db` の両方で同じ値を使います。自分で固定したい場合だけ `POSTGRES_PASSWORD` を設定してください。
+`POSTGRES_PASSWORD` は未設定でも構いません。CoolifyではCompose内の `SERVICE_PASSWORD_POSTGRES` からDBパスワードを自動生成し、`bot` と `db` の両方で同じ値を使います。自分で固定したい場合は `SERVICE_PASSWORD_POSTGRES` をCoolify側で設定してください。
 
 必要なら開発/検証用に:
 
@@ -180,10 +180,12 @@ Composeには低めのリソース制限を入れています。
 
 Postgresも小さめに調整しています。
 
-- `shared_buffers=64MB`
-- `work_mem=4MB`
-- `maintenance_work_mem=32MB`
-- `max_connections=20`
+- `shared_buffers=32MB`
+- `work_mem=2MB`
+- `maintenance_work_mem=16MB`
+- `max_connections=10`
+
+BotはDB接続を起動時にリトライするため、Coolify上でPostgresの起動が少し遅れてもそのまま待機します。
 
 ## Commands
 
