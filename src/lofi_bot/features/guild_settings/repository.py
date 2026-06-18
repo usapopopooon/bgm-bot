@@ -115,11 +115,12 @@ class GuildSettingsRepository:
     ) -> None:
         await self._pool.execute(
             """
-            UPDATE guild_settings
-            SET panel_channel_id = $2,
-                panel_message_id = $3,
+            INSERT INTO guild_settings (guild_id, panel_channel_id, panel_message_id)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (guild_id) DO UPDATE
+            SET panel_channel_id = EXCLUDED.panel_channel_id,
+                panel_message_id = EXCLUDED.panel_message_id,
                 updated_at = now()
-            WHERE guild_id = $1
             """,
             guild_id,
             channel_id,

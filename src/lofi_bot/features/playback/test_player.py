@@ -152,6 +152,32 @@ async def test_toggle_pause_returns_false_when_not_playing() -> None:
     assert voice_client.resume_calls == 0
 
 
+async def test_play_next_only_notifies_once_when_replacing_current_track() -> None:
+    calls: list[int] = []
+
+    async def refresh_panel(guild_id: int) -> None:
+        calls.append(guild_id)
+
+    repository = FakeTrackRepository([make_track(1)])
+    player = GuildPlayer(
+        guild_id=123,
+        voice_client=FakeVoiceClient(),
+        tracks=repository,
+        guild_settings=None,
+        category_slug="chill",
+        volume=0.01,
+        on_track_changed=refresh_panel,
+    )
+    player._create_source = lambda track: object()
+    player.current_track = make_track(99, title="Old Track")
+
+    await player.play_next()
+    await asyncio.sleep(0)
+
+    assert player.current_track == repository.tracks[0]
+    assert calls == [123]
+
+
 async def test_play_next_does_not_leave_stale_current_track_after_play_failures() -> None:
     old_track = make_track(99, title="Old Track")
     tracks = [make_track(index) for index in range(1, 6)]

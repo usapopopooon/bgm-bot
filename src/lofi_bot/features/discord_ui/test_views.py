@@ -9,7 +9,11 @@ from lofi_bot.features.guild_settings.repository import GuildSettings
 
 
 class FakeGuildSettingsRepository:
+    def __init__(self) -> None:
+        self.get_or_create_calls = 0
+
     async def get_or_create(self, guild_id: int, default_category: str) -> GuildSettings:
+        self.get_or_create_calls += 1
         return GuildSettings(
             guild_id=guild_id,
             voice_channel_id=None,
@@ -34,9 +38,10 @@ class FakePlayerManager:
 
 
 async def test_panel_embed_uses_japanese_labels_without_admin_status() -> None:
+    guild_settings = FakeGuildSettingsRepository()
     embed = await build_panel_embed(
         guild_id=123,
-        guild_settings=FakeGuildSettingsRepository(),
+        guild_settings=guild_settings,
         player_manager=FakePlayerManager(),
         default_category="chill",
     )
@@ -54,6 +59,7 @@ async def test_panel_embed_uses_japanese_labels_without_admin_status() -> None:
     assert fields["再生中"] == "準備中"
     assert "Progress" not in fields
     assert embed.footer.text == "パネルが流れたら /panel で再投稿できます。"
+    assert guild_settings.get_or_create_calls == 0
 
 
 async def test_panel_embed_includes_current_track_without_progress_bar() -> None:

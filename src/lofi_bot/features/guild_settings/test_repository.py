@@ -20,3 +20,16 @@ async def test_clear_voice_channel_removes_saved_voice_channel() -> None:
     query, args = pool.execute_calls[0]
     assert "SET voice_channel_id = NULL" in query
     assert args == (123,)
+
+
+async def test_update_panel_upserts_panel_target() -> None:
+    pool = FakePool()
+    repository = GuildSettingsRepository(pool)
+
+    await repository.update_panel(123, 456, 789)
+
+    query, args = pool.execute_calls[0]
+    assert "INSERT INTO guild_settings" in query
+    assert "ON CONFLICT (guild_id) DO UPDATE" in query
+    assert "panel_channel_id = EXCLUDED.panel_channel_id" in query
+    assert args == (123, 456, 789)

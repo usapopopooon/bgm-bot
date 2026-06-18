@@ -94,6 +94,11 @@ class LofiDiscordBot(commands.Bot):
             return
         if before.channel == after.channel:
             return
+        voice_client = member.guild.voice_client
+        if voice_client is None or not voice_client.is_connected():
+            return
+        if before.channel != voice_client.channel or after.channel == voice_client.channel:
+            return
         left = await self.player_manager.leave_if_alone(member.guild)
         if left:
             LOGGER.info("Left empty voice channel guild=%s", member.guild.id)

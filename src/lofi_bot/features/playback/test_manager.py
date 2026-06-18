@@ -6,15 +6,30 @@ from lofi_bot.features.playback.manager import PlayerManager
 
 
 class FakeSettingsRepository:
-    def __init__(self, stay_connected: bool = False) -> None:
+    def __init__(
+        self,
+        stay_connected: bool = False,
+        voice_channel_id: int | None = None,
+    ) -> None:
         self.stay_connected = stay_connected
+        self.voice_channel_id = voice_channel_id
+        self.voice_channel_updates: list[tuple[int, int]] = []
         self.selected_categories: list[tuple[int, str]] = []
         self.volumes: list[tuple[int, float]] = []
         self.stay_updates: list[tuple[int, bool]] = []
         self.cleared_voice_channels: list[int] = []
 
     async def get_or_create(self, guild_id: int, default_category: str):
-        return SimpleNamespace(stay_connected=self.stay_connected)
+        return SimpleNamespace(
+            voice_channel_id=self.voice_channel_id,
+            selected_category=default_category,
+            volume=0.01,
+            stay_connected=self.stay_connected,
+        )
+
+    async def update_voice_channel(self, guild_id: int, voice_channel_id: int) -> None:
+        self.voice_channel_id = voice_channel_id
+        self.voice_channel_updates.append((guild_id, voice_channel_id))
 
     async def update_selected_category(self, guild_id: int, category_slug: str) -> None:
         self.selected_categories.append((guild_id, category_slug))
@@ -61,6 +76,115 @@ class FakePlayer:
 
     def set_track_changed_callback(self, callback) -> None:
         self.track_changed_callback = callback
+
+
+class FakeConnectVoiceChannel:
+    def __init__(self, channel_id: int) -> None:
+        self.id = channel_id
+        self.connect_calls: list[dict[str, object]] = []
+        self.voice_client = FakeConnectedVoiceClient(self)
+
+    async def connect(self, **kwargs: object) -> FakeConnectedVoiceClient:
+        self.connect_calls.append(kwargs)
+        return self.voice_client
+
+
+class FakeConnectedVoiceClient:
+    def __init__(self, channel: FakeConnectVoiceChannel, connected: bool = True) -> None:
+        self.channel = channel
+        self._connected = connected
+        self.move_calls: list[FakeConnectVoiceChannel] = []
+
+    def is_connected(self) -> bool:
+        return self._connected
+
+    async def move_to(self, channel: FakeConnectVoiceChannel) -> None:
+        self.channel = channel
+        self.move_calls.append(channel)
+
+
+class FakeConnectGuild:
+    def __init__(self, voice_client: FakeConnectedVoiceClient | None = None) -> None:
+        self.id = 123
+        self.voice_client = voice_client
+        self.voice_state_changes: list[dict[str, object]] = []
+
+    async def change_voice_state(self, **kwargs: object) -> None:
+        self.voice_state_changes.append(kwargs)
+
+
+async def test_connect_self_deafens_new_voice_connection() -> None:
+    settings = FakeSettingsRepository()
+    manager = PlayerManager(
+        tracks=None,
+        guild_settings=settings,
+        default_category="chill",
+    )
+    guild = FakeConnectGuild()
+    channel = FakeConnectVoiceChannel(456)
+
+    player = await manager.connect(guild, channel)
+
+    assert player.voice_client is channel.voice_client
+    assert channel.connect_calls == [
+        {
+            "reconnect": True,
+            "timeout": 20,
+            "self_deaf": True,
+        }
+    ]
+    assert settings.voice_channel_updates == [(123, 456)]
+
+
+async def test_connect_reapplies_speaker_mute_for_existing_voice_connection() -> None:
+    channel = FakeConnectVoiceChannel(456)
+    voice_client = FakeConnectedVoiceClient(channel)
+    settings = FakeSettingsRepository(voice_channel_id=channel.id)
+    manager = PlayerManager(
+        tracks=None,
+        guild_settings=settings,
+        default_category="chill",
+    )
+    guild = FakeConnectGuild(voice_client)
+
+    player = await manager.connect(guild, channel)
+
+    assert player.voice_client is voice_client
+    assert channel.connect_calls == []
+    assert voice_client.move_calls == []
+    assert guild.voice_state_changes == [
+        {
+            "channel": channel,
+            "self_deaf": True,
+            "self_mute": False,
+        }
+    ]
+    assert settings.voice_channel_updates == []
+
+
+async def test_connect_moves_existing_voice_connection_before_speaker_mute() -> None:
+    old_channel = FakeConnectVoiceChannel(111)
+    new_channel = FakeConnectVoiceChannel(456)
+    voice_client = FakeConnectedVoiceClient(old_channel)
+    settings = FakeSettingsRepository(voice_channel_id=old_channel.id)
+    manager = PlayerManager(
+        tracks=None,
+        guild_settings=settings,
+        default_category="chill",
+    )
+    guild = FakeConnectGuild(voice_client)
+
+    await manager.connect(guild, new_channel)
+
+    assert voice_client.move_calls == [new_channel]
+    assert guild.voice_state_changes == [
+        {
+            "channel": new_channel,
+            "self_deaf": True,
+            "self_mute": False,
+        }
+    ]
+    assert settings.voice_channel_updates == [(123, 456)]
 
 
 async def test_skip_returns_false_for_disconnected_player() -> None:

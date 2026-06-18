@@ -77,13 +77,34 @@ class FakePlayerManager:
 
 
 class FakeGuild:
-    def __init__(self, guild_id: int) -> None:
+    def __init__(self, guild_id: int, voice_client=None) -> None:  # noqa: ANN001
         self.id = guild_id
+        self.voice_client = voice_client
 
 
 class FakeVoiceChannel:
     def __init__(self, channel_id: int) -> None:
         self.id = channel_id
+
+
+class FakeBotVoiceClient:
+    def __init__(self, channel: FakeVoiceChannel, connected: bool = True) -> None:
+        self.channel = channel
+        self.connected = connected
+
+    def is_connected(self) -> bool:
+        return self.connected
+
+
+class FakeVoiceState:
+    def __init__(self, channel: FakeVoiceChannel | None) -> None:
+        self.channel = channel
+
+
+class FakeVoiceMember:
+    def __init__(self, guild: FakeGuild, bot: bool = False) -> None:
+        self.guild = guild
+        self.bot = bot
 
 
 class FakePermissions:
@@ -192,6 +213,40 @@ async def test_restore_stay_connected_voice_skips_missing_guild(monkeypatch) -> 
 
     assert player_manager.connected == []
     assert player_manager.started == []
+
+
+async def test_voice_state_update_ignores_unrelated_channel_changes() -> None:
+    bot_channel = FakeVoiceChannel(456)
+    guild = FakeGuild(123, voice_client=FakeBotVoiceClient(bot_channel))
+    player_manager = FakePlayerManager()
+    bot = object.__new__(LofiDiscordBot)
+    bot.player_manager = player_manager
+
+    await LofiDiscordBot.on_voice_state_update(
+        bot,
+        FakeVoiceMember(guild),
+        FakeVoiceState(FakeVoiceChannel(111)),
+        FakeVoiceState(FakeVoiceChannel(222)),
+    )
+
+    assert player_manager.leave_if_alone_calls == []
+
+
+async def test_voice_state_update_checks_leave_when_member_leaves_bot_channel() -> None:
+    bot_channel = FakeVoiceChannel(456)
+    guild = FakeGuild(123, voice_client=FakeBotVoiceClient(bot_channel))
+    player_manager = FakePlayerManager()
+    bot = object.__new__(LofiDiscordBot)
+    bot.player_manager = player_manager
+
+    await LofiDiscordBot.on_voice_state_update(
+        bot,
+        FakeVoiceMember(guild),
+        FakeVoiceState(bot_channel),
+        FakeVoiceState(None),
+    )
+
+    assert player_manager.leave_if_alone_calls == [guild.id]
 
 
 def test_admin_commands_default_to_admin_permission() -> None:

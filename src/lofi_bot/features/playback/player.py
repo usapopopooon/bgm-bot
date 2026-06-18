@@ -114,7 +114,8 @@ class GuildPlayer:
         if self.voice_client.is_playing() or self.voice_client.is_paused():
             return
 
-        self._set_current_track(None)
+        had_track = self.current_track is not None
+        self.current_track = None
         for _ in range(5):
             track = await self._tracks.get_random_track(self.guild_id, self._category_slug)
             if track is None or track.id is None:
@@ -123,6 +124,8 @@ class GuildPlayer:
                     self.guild_id,
                     self._category_slug,
                 )
+                if had_track:
+                    self._notify_track_changed()
                 self._schedule_retry()
                 return
 
@@ -143,6 +146,8 @@ class GuildPlayer:
             except Exception:
                 LOGGER.exception("Failed to start track id=%s", track.id)
                 await self._tracks.mark_failed(track.id)
+        if had_track:
+            self._notify_track_changed()
 
     def _create_source(self, track: Track) -> discord.AudioSource:
         before_options = "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5"

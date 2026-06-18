@@ -13,6 +13,7 @@ from lofi_bot.features.playback.player import GuildPlayer, clamp_volume
 
 LOGGER = logging.getLogger(__name__)
 TrackChangedCallback = Callable[[int], Awaitable[None]]
+VOICE_CONNECT_TIMEOUT_SECONDS = 20
 
 
 class PlayerManager:
@@ -35,14 +36,20 @@ class PlayerManager:
 
     async def connect(self, guild: discord.Guild, channel: discord.VoiceChannel) -> GuildPlayer:
         settings = await self._guild_settings.get_or_create(guild.id, self._default_category)
-        await self._guild_settings.update_voice_channel(guild.id, channel.id)
+        if settings.voice_channel_id != channel.id:
+            await self._guild_settings.update_voice_channel(guild.id, channel.id)
 
         voice_client = guild.voice_client
         if voice_client is not None and voice_client.is_connected():
             if voice_client.channel != channel:
                 await voice_client.move_to(channel)
+            await self._ensure_speaker_muted(guild, channel)
         else:
-            voice_client = await channel.connect(reconnect=True, timeout=20)
+            voice_client = await channel.connect(
+                reconnect=True,
+                timeout=VOICE_CONNECT_TIMEOUT_SECONDS,
+                self_deaf=True,
+            )
 
         player = self._players.get(guild.id)
         if player is None:
@@ -62,6 +69,16 @@ class PlayerManager:
             player.set_track_changed_callback(self._track_changed_callback)
 
         return player
+
+    async def _ensure_speaker_muted(
+        self,
+        guild: discord.Guild,
+        channel: discord.VoiceChannel,
+    ) -> None:
+        change_voice_state = getattr(guild, "change_voice_state", None)
+        if change_voice_state is None:
+            return
+        await change_voice_state(channel=channel, self_deaf=True, self_mute=False)
 
     async def start_saved_category(self, guild: discord.Guild) -> None:
         player = self._players.get(guild.id)

@@ -99,7 +99,7 @@ async def build_panel_embed(
     player_manager: PlayerManager,
     default_category: str = DEFAULT_CATEGORY,
 ) -> discord.Embed:
-    await guild_settings.get_or_create(guild_id, default_category)
+    _ = guild_settings, default_category
     category = CATEGORIES[DEFAULT_CATEGORY]
     track = player_manager.current_track(guild_id)
 
