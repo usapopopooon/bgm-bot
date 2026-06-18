@@ -94,12 +94,34 @@ class PlayerManager:
         player.set_volume(volume)
         return True
 
+    async def set_stay_connected(self, guild_id: int, stay_connected: bool) -> None:
+        await self._guild_settings.update_stay_connected(guild_id, stay_connected)
+
     async def leave(self, guild_id: int) -> bool:
         player = self._players.pop(guild_id, None)
         if player is None:
             return False
         await player.stop()
         return True
+
+    async def leave_if_alone(self, guild: discord.Guild) -> bool:
+        voice_client = guild.voice_client
+        if voice_client is None or not voice_client.is_connected():
+            return False
+
+        settings = await self._guild_settings.get_or_create(guild.id, self._default_category)
+        if settings.stay_connected:
+            return False
+
+        channel = voice_client.channel
+        members = getattr(channel, "members", ())
+        if any(not member.bot for member in members):
+            return False
+
+        left = await self.leave(guild.id)
+        if left and self._track_changed_callback is not None:
+            await self._track_changed_callback(guild.id)
+        return left
 
     async def close_all(self) -> None:
         for guild_id in list(self._players):

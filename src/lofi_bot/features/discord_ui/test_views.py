@@ -11,6 +11,7 @@ class FakeGuildSettingsRepository:
             voice_channel_id=None,
             selected_category=default_category,
             volume=0.01,
+            stay_connected=False,
             panel_channel_id=None,
             panel_message_id=None,
         )
@@ -34,4 +35,5 @@ async def test_panel_embed_includes_category_source_link() -> None:
     assert fields["Source"] == (
         "[Jamendo: Lofi](https://www.jamendo.com/search?qs=q%3Dlofi+chillhop+beats)"
     )
+    assert fields["常駐"] == "OFF"
     assert fields["Now Playing"] == "準備中"

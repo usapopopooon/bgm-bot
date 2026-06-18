@@ -1,12 +1,19 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from lofi_bot.features.playback.manager import PlayerManager
 
 
 class FakeSettingsRepository:
-    def __init__(self) -> None:
+    def __init__(self, stay_connected: bool = False) -> None:
+        self.stay_connected = stay_connected
         self.selected_categories: list[tuple[int, str]] = []
         self.volumes: list[tuple[int, float]] = []
+        self.stay_updates: list[tuple[int, bool]] = []
+
+    async def get_or_create(self, guild_id: int, default_category: str):
+        return SimpleNamespace(stay_connected=self.stay_connected)
 
     async def update_selected_category(self, guild_id: int, category_slug: str) -> None:
         self.selected_categories.append((guild_id, category_slug))
@@ -14,14 +21,22 @@ class FakeSettingsRepository:
     async def update_volume(self, guild_id: int, volume: float) -> None:
         self.volumes.append((guild_id, volume))
 
+    async def update_stay_connected(self, guild_id: int, stay_connected: bool) -> None:
+        self.stay_connected = stay_connected
+        self.stay_updates.append((guild_id, stay_connected))
+
 
 class FakePlayer:
     def __init__(self, is_active: bool) -> None:
         self.is_active = is_active
         self.skipped = False
+        self.stopped = False
         self.category_slug: str | None = None
         self.volume: float | None = None
         self.track_changed_callback = None
+
+    async def stop(self) -> None:
+        self.stopped = True
 
     async def skip(self) -> None:
         self.skipped = True
@@ -117,3 +132,102 @@ async def test_set_track_changed_callback_updates_existing_players() -> None:
     manager.set_track_changed_callback(refresh_panel)
 
     assert player.track_changed_callback is refresh_panel
+
+
+class FakeMember:
+    def __init__(self, *, bot: bool) -> None:
+        self.bot = bot
+
+
+class FakeVoiceChannel:
+    def __init__(self, members: list[FakeMember]) -> None:
+        self.members = members
+
+
+class FakeVoiceClient:
+    def __init__(self, members: list[FakeMember], connected: bool = True) -> None:
+        self.channel = FakeVoiceChannel(members)
+        self._connected = connected
+
+    def is_connected(self) -> bool:
+        return self._connected
+
+
+class FakeGuild:
+    def __init__(self, voice_client: FakeVoiceClient | None) -> None:
+        self.id = 123
+        self.voice_client = voice_client
+
+
+async def test_leave_if_alone_disconnects_when_only_bots_remain() -> None:
+    settings = FakeSettingsRepository(stay_connected=False)
+    manager = PlayerManager(
+        tracks=None,
+        guild_settings=settings,
+        default_category="lofi",
+    )
+    player = FakePlayer(is_active=True)
+    manager._players[123] = player
+    refreshed: list[int] = []
+
+    async def refresh_panel(guild_id: int) -> None:
+        refreshed.append(guild_id)
+
+    manager.set_track_changed_callback(refresh_panel)
+    guild = FakeGuild(FakeVoiceClient([FakeMember(bot=True)]))
+
+    result = await manager.leave_if_alone(guild)
+
+    assert result is True
+    assert player.stopped is True
+    assert manager._players == {}
+    assert refreshed == [123]
+
+
+async def test_leave_if_alone_keeps_connected_when_stay_is_enabled() -> None:
+    settings = FakeSettingsRepository(stay_connected=True)
+    manager = PlayerManager(
+        tracks=None,
+        guild_settings=settings,
+        default_category="lofi",
+    )
+    player = FakePlayer(is_active=True)
+    manager._players[123] = player
+    guild = FakeGuild(FakeVoiceClient([FakeMember(bot=True)]))
+
+    result = await manager.leave_if_alone(guild)
+
+    assert result is False
+    assert player.stopped is False
+    assert manager._players == {123: player}
+
+
+async def test_leave_if_alone_keeps_connected_when_humans_remain() -> None:
+    settings = FakeSettingsRepository(stay_connected=False)
+    manager = PlayerManager(
+        tracks=None,
+        guild_settings=settings,
+        default_category="lofi",
+    )
+    player = FakePlayer(is_active=True)
+    manager._players[123] = player
+    guild = FakeGuild(FakeVoiceClient([FakeMember(bot=True), FakeMember(bot=False)]))
+
+    result = await manager.leave_if_alone(guild)
+
+    assert result is False
+    assert player.stopped is False
+    assert manager._players == {123: player}
+
+
+async def test_set_stay_connected_persists_setting() -> None:
+    settings = FakeSettingsRepository()
+    manager = PlayerManager(
+        tracks=None,
+        guild_settings=settings,
+        default_category="lofi",
+    )
+
+    await manager.set_stay_connected(123, True)
+
+    assert settings.stay_updates == [(123, True)]

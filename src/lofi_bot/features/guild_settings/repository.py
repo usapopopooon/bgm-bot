@@ -11,6 +11,7 @@ class GuildSettings:
     voice_channel_id: int | None
     selected_category: str
     volume: float
+    stay_connected: bool
     panel_channel_id: int | None
     panel_message_id: int | None
 
@@ -70,6 +71,19 @@ class GuildSettingsRepository:
             volume,
         )
 
+    async def update_stay_connected(self, guild_id: int, stay_connected: bool) -> None:
+        await self._pool.execute(
+            """
+            INSERT INTO guild_settings (guild_id, stay_connected)
+            VALUES ($1, $2)
+            ON CONFLICT (guild_id) DO UPDATE
+            SET stay_connected = EXCLUDED.stay_connected,
+                updated_at = now()
+            """,
+            guild_id,
+            stay_connected,
+        )
+
     async def update_panel(
         self,
         guild_id: int,
@@ -95,6 +109,7 @@ class GuildSettingsRepository:
             voice_channel_id=row["voice_channel_id"],
             selected_category=row["selected_category"],
             volume=row["volume"],
+            stay_connected=row["stay_connected"],
             panel_channel_id=row["panel_channel_id"],
             panel_message_id=row["panel_message_id"],
         )

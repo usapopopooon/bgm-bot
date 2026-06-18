@@ -44,7 +44,7 @@ class LofiDiscordBot(commands.Bot):
         self.tree.add_command(
             app_commands.Command(
                 name="vc",
-                description="VCに接続してカテゴリ選択パネルを表示します",
+                description="VCに接続して操作パネルを表示します",
                 callback=self._vc_command,
             )
         )
@@ -57,6 +57,20 @@ class LofiDiscordBot(commands.Bot):
             activity=discord.Activity(type=discord.ActivityType.listening, name="/vc")
         )
         LOGGER.info("Logged in as %s", self.user)
+
+    async def on_voice_state_update(
+        self,
+        member: discord.Member,
+        before: discord.VoiceState,
+        after: discord.VoiceState,
+    ) -> None:
+        if member.bot:
+            return
+        if before.channel == after.channel:
+            return
+        left = await self.player_manager.leave_if_alone(member.guild)
+        if left:
+            LOGGER.info("Left empty voice channel guild=%s", member.guild.id)
 
     async def _sync_commands(self) -> None:
         if self.settings.discord_guild_id is not None:

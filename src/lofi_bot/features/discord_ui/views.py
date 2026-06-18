@@ -180,6 +180,42 @@ class SkipButton(discord.ui.Button):
         await interaction.response.edit_message(embed=embed, view=self.view)
 
 
+class StayButton(discord.ui.Button):
+    def __init__(self) -> None:
+        super().__init__(
+            label="常駐",
+            style=discord.ButtonStyle.secondary,
+            custom_id="lofi_bot:stay",
+            row=1,
+        )
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        if interaction.guild is None or not isinstance(self.view, PlayerControlView):
+            await interaction.response.send_message("サーバー内で使ってください。", ephemeral=True)
+            return
+
+        settings = await self.view.guild_settings.get_or_create(
+            interaction.guild.id,
+            self.view.default_category,
+        )
+        stay_connected = not settings.stay_connected
+        await self.view.player_manager.set_stay_connected(interaction.guild.id, stay_connected)
+        left = False
+        if not stay_connected:
+            left = await self.view.player_manager.leave_if_alone(interaction.guild)
+
+        embed = await build_panel_embed(
+            guild_id=interaction.guild.id,
+            guild_settings=self.view.guild_settings,
+            player_manager=self.view.player_manager,
+            default_category=self.view.default_category,
+        )
+        embed.description = f"常駐を{'ON' if stay_connected else 'OFF'}にしました。"
+        if left:
+            embed.description += " VCに誰もいないため退出しました。"
+        await interaction.response.edit_message(embed=embed, view=self.view)
+
+
 class LeaveButton(discord.ui.Button):
     def __init__(self) -> None:
         super().__init__(
@@ -219,6 +255,7 @@ class PlayerControlView(discord.ui.View):
         self.add_item(CategorySelect())
         self.add_item(VolumeButton())
         self.add_item(SkipButton())
+        self.add_item(StayButton())
         self.add_item(LeaveButton())
 
 
@@ -244,6 +281,11 @@ async def build_panel_embed(
         inline=True,
     )
     embed.add_field(name="Volume", value=format_volume(settings.volume), inline=True)
+    embed.add_field(
+        name="常駐",
+        value="ON" if settings.stay_connected else "OFF",
+        inline=True,
+    )
 
     if track is None:
         embed.add_field(name="Now Playing", value="準備中", inline=False)
