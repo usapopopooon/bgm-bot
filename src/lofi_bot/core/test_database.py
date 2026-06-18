@@ -81,7 +81,7 @@ async def test_connect_raises_after_retry_attempts(monkeypatch: pytest.MonkeyPat
 
 
 @pytest.mark.asyncio
-async def test_migrate_sets_default_volume_to_three_percent() -> None:
+async def test_migrate_sets_default_volume_to_one_percent() -> None:
     pool = FakePool()
     database = Database("postgresql://lofi:password@db:5432/lofi")
     database.pool = pool
@@ -89,5 +89,5 @@ async def test_migrate_sets_default_volume_to_three_percent() -> None:
     await database.migrate()
 
     statement = pool.connection.statements[0]
-    assert "volume REAL NOT NULL DEFAULT 0.03" in statement
-    assert "ALTER COLUMN volume SET DEFAULT 0.03" in statement
+    assert "volume REAL NOT NULL DEFAULT 0.01" in statement
+    assert "ALTER COLUMN volume SET DEFAULT 0.01" in statement

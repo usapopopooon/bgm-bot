@@ -21,7 +21,7 @@ async def test_track_change_notifies_panel_refresh_callback() -> None:
         tracks=None,
         guild_settings=None,
         category_slug="lofi",
-        volume=0.03,
+        volume=0.01,
         on_track_changed=refresh_panel,
     )
 

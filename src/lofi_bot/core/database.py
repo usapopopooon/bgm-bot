@@ -72,14 +72,14 @@ class Database:
                     guild_id BIGINT PRIMARY KEY,
                     voice_channel_id BIGINT,
                     selected_category TEXT NOT NULL DEFAULT 'lofi',
-                    volume REAL NOT NULL DEFAULT 0.03,
+                    volume REAL NOT NULL DEFAULT 0.01,
                     panel_channel_id BIGINT,
                     panel_message_id BIGINT,
                     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
                 );
 
                 ALTER TABLE guild_settings
-                    ALTER COLUMN volume SET DEFAULT 0.03;
+                    ALTER COLUMN volume SET DEFAULT 0.01;
 
                 CREATE TABLE IF NOT EXISTS play_history (
                     id BIGSERIAL PRIMARY KEY,

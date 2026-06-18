@@ -207,7 +207,7 @@ BotはDB接続を起動時にリトライするため、Coolify上でPostgresの
 実行後に表示される操作パネル:
 
 - Category select: `lofi`, `chill`, `hiphop`, `relaxation`, `instrumental`, `beats`
-- `Volume`: `1`〜`100` の数字入力で音量を変更。初期値は `3%`
+- `Volume`: `1`〜`100` の数字入力で音量を変更。初期値は `1%`
 - `Skip`: 次の曲へ
 - `Leave`: VCから退出
 
