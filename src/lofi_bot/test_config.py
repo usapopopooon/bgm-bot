@@ -24,6 +24,23 @@ def test_load_settings_uses_explicit_database_url(monkeypatch: pytest.MonkeyPatc
     assert settings.database_url == "postgresql://user:password@example:5432/app"
 
 
+def test_load_settings_prefers_external_database_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "os.environ",
+        {
+            **BASE_ENV,
+            "DATABASE_URL": "postgresql://internal:password@127.0.0.1:5432/app",
+            "EXTERNAL_DATABASE_URL": "postgresql://external:password@example:5432/app",
+        },
+    )
+
+    settings = load_settings()
+
+    assert settings.database_url == "postgresql://external:password@example:5432/app"
+
+
 def test_load_settings_builds_database_url_from_postgres_parts(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -31,7 +48,6 @@ def test_load_settings_builds_database_url_from_postgres_parts(
         "os.environ",
         {
             **BASE_ENV,
-            "POSTGRES_HOST": "lofi-postgres",
             "POSTGRES_PORT": "5432",
             "POSTGRES_DB": "lofi",
             "POSTGRES_USER": "lofi",
@@ -42,5 +58,5 @@ def test_load_settings_builds_database_url_from_postgres_parts(
     settings = load_settings()
 
     assert settings.database_url == (
-        "postgresql://lofi:pass%20with%20symbols%2F%40@lofi-postgres:5432/lofi"
+        "postgresql://lofi:pass%20with%20symbols%2F%40@127.0.0.1:5432/lofi"
     )

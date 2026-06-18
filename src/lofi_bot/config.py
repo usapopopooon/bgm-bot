@@ -35,13 +35,16 @@ def _postgres_url_for_asyncpg(value: str) -> str:
 
 
 def _database_url() -> str:
-    database_url = os.getenv("DATABASE_URL", "").strip()
+    database_url = (
+        os.getenv("EXTERNAL_DATABASE_URL", "").strip()
+        or os.getenv("DATABASE_URL", "").strip()
+    )
     if database_url:
         return _postgres_url_for_asyncpg(database_url)
 
     user = os.getenv("POSTGRES_USER", "lofi").strip() or "lofi"
     password = _required("POSTGRES_PASSWORD")
-    host = os.getenv("POSTGRES_HOST", "lofi-postgres").strip() or "lofi-postgres"
+    host = os.getenv("POSTGRES_HOST", "127.0.0.1").strip() or "127.0.0.1"
     port = os.getenv("POSTGRES_PORT", "5432").strip() or "5432"
     database = os.getenv("POSTGRES_DB", "lofi").strip() or "lofi"
 
