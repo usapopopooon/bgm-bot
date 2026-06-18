@@ -140,7 +140,3 @@ class PlayerManager:
     def current_track(self, guild_id: int) -> Track | None:
         player = self._players.get(guild_id)
         return player.current_track if player is not None else None
-
-    def current_track_elapsed_seconds(self, guild_id: int) -> int | None:
-        player = self._players.get(guild_id)
-        return player.current_track_elapsed_seconds() if player is not None else None

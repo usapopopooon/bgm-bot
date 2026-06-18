@@ -9,10 +9,25 @@ class FakeGuildSettingsRepository:
     def __init__(self, settings: list[GuildSettings]) -> None:
         self._settings = settings
         self.list_calls = 0
+        self.panel_updates: list[tuple[int, int, int]] = []
 
     async def list_stay_connected(self) -> list[GuildSettings]:
         self.list_calls += 1
         return self._settings
+
+    async def get_or_create(self, guild_id: int, default_category: str) -> GuildSettings:
+        return GuildSettings(
+            guild_id=guild_id,
+            voice_channel_id=None,
+            selected_category=default_category,
+            volume=0.01,
+            stay_connected=False,
+            panel_channel_id=None,
+            panel_message_id=None,
+        )
+
+    async def update_panel(self, guild_id: int, channel_id: int, message_id: int) -> None:
+        self.panel_updates.append((guild_id, channel_id, message_id))
 
 
 class FakePlayerManager:
@@ -54,6 +69,9 @@ class FakePlayerManager:
         self.leave_calls.append((guild_id, clear_saved_channel, disable_stay_connected))
         return self.left
 
+    def current_track(self, guild_id: int):
+        return None
+
 
 class FakeGuild:
     def __init__(self, guild_id: int) -> None:
@@ -73,9 +91,35 @@ class FakePermissions:
 class FakeResponse:
     def __init__(self) -> None:
         self.messages: list[tuple[str, bool]] = []
+        self.deferred = False
 
     async def send_message(self, content: str, ephemeral: bool = False) -> None:
         self.messages.append((content, ephemeral))
+
+    async def defer(self, thinking: bool = False) -> None:
+        self.deferred = thinking
+
+
+class FakeMessageChannel:
+    def __init__(self, channel_id: int) -> None:
+        self.id = channel_id
+
+
+class FakeMessage:
+    def __init__(self, channel_id: int, message_id: int) -> None:
+        self.id = message_id
+        self.channel = FakeMessageChannel(channel_id)
+
+
+class FakeFollowup:
+    def __init__(self, channel_id: int = 456, message_id: int = 789) -> None:
+        self.channel_id = channel_id
+        self.message_id = message_id
+        self.messages: list[tuple[object, object, bool]] = []
+
+    async def send(self, *, embed, view, wait: bool = False):  # noqa: ANN001, ANN201
+        self.messages.append((embed, view, wait))
+        return FakeMessage(self.channel_id, self.message_id)
 
 
 class FakeInteraction:
@@ -83,6 +127,7 @@ class FakeInteraction:
         self.guild = FakeGuild(guild_id) if guild_id is not None else None
         self.permissions = FakePermissions(administrator)
         self.response = FakeResponse()
+        self.followup = FakeFollowup()
 
 
 async def test_restore_stay_connected_voice_reconnects_saved_channels(monkeypatch) -> None:
@@ -173,6 +218,32 @@ def test_admin_commands_default_to_admin_permission() -> None:
 
     assert all(command.default_permissions is not None for command in commands)
     assert all(command.default_permissions.administrator for command in commands)
+
+
+def test_panel_command_does_not_default_to_admin_permission() -> None:
+    bot = object.__new__(LofiDiscordBot)
+    command = bot_module.app_commands.Command(
+        name="panel",
+        description="操作パネルを再投稿します",
+        callback=bot._panel_command,
+    )
+
+    assert command.default_permissions is None
+
+
+async def test_panel_command_posts_panel_for_non_admin() -> None:
+    guild_settings = FakeGuildSettingsRepository([])
+    bot = object.__new__(LofiDiscordBot)
+    bot.guild_settings = guild_settings
+    bot.player_manager = FakePlayerManager()
+    bot.settings = type("FakeSettings", (), {"default_category": "chill"})()
+    interaction = FakeInteraction(guild_id=123, administrator=False)
+
+    await LofiDiscordBot._panel_command(bot, interaction)
+
+    assert interaction.response.deferred is True
+    assert len(interaction.followup.messages) == 1
+    assert guild_settings.panel_updates == [(123, 456, 789)]
 
 
 async def test_volume_command_rejects_non_admin() -> None:

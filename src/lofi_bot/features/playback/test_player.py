@@ -84,26 +84,6 @@ async def test_track_change_notifies_panel_refresh_callback() -> None:
     assert calls == [123]
 
 
-def test_current_track_elapsed_seconds_is_available_for_current_track() -> None:
-    player = GuildPlayer(
-        guild_id=123,
-        voice_client=FakeVoiceClient(),
-        tracks=None,
-        guild_settings=None,
-        category_slug="chill",
-        volume=0.01,
-    )
-    track = make_track(1)
-
-    player._set_current_track(track)
-
-    assert player.current_track_elapsed_seconds() is not None
-
-    player._set_current_track(None)
-
-    assert player.current_track_elapsed_seconds() is None
-
-
 async def test_play_next_does_not_leave_stale_current_track_after_play_failures() -> None:
     old_track = make_track(99, title="Old Track")
     tracks = [make_track(index) for index in range(1, 6)]

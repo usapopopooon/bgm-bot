@@ -51,6 +51,13 @@ class LofiDiscordBot(commands.Bot):
         )
         self.tree.add_command(
             app_commands.Command(
+                name="panel",
+                description="操作パネルを再投稿します",
+                callback=self._panel_command,
+            )
+        )
+        self.tree.add_command(
+            app_commands.Command(
                 name="volume",
                 description="音量を変更します（管理者のみ）",
                 callback=self._volume_command,
@@ -235,6 +242,20 @@ class LofiDiscordBot(commands.Bot):
 
         await self.player_manager.connect(interaction.guild, member.voice.channel)
         await self.player_manager.start_saved_category(interaction.guild)
+
+        await self._send_panel(interaction)
+
+    async def _panel_command(self, interaction: discord.Interaction) -> None:
+        if interaction.guild is None:
+            await interaction.response.send_message("サーバー内で使ってください。", ephemeral=True)
+            return
+
+        await interaction.response.defer(thinking=True)
+        await self._send_panel(interaction)
+
+    async def _send_panel(self, interaction: discord.Interaction) -> None:
+        if interaction.guild is None:
+            raise RuntimeError("Panel can only be sent in a guild")
 
         embed = await build_panel_embed(
             guild_id=interaction.guild.id,
