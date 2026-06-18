@@ -137,6 +137,16 @@ class PlayerManager:
         await player.stop()
         return True
 
+    async def handle_external_disconnect(self, guild_id: int) -> bool:
+        player = self._players.pop(guild_id, None)
+        if player is None:
+            return False
+
+        await self._guild_settings.clear_voice_channel(guild_id)
+        await self._guild_settings.update_stay_connected(guild_id, False)
+        await player.stop()
+        return True
+
     async def leave_if_alone(self, guild: discord.Guild) -> bool:
         voice_client = guild.voice_client
         if voice_client is None or not voice_client.is_connected():

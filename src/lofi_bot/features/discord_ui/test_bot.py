@@ -43,6 +43,8 @@ class FakePlayerManager:
         self.left_alone = False
         self.leave_calls: list[tuple[int, bool, bool]] = []
         self.left = True
+        self.external_disconnect_calls: list[int] = []
+        self.externally_disconnected = True
 
     async def connect(self, guild, channel):  # noqa: ANN001, ANN201
         self.connected.append((guild.id, channel.id))
@@ -70,6 +72,10 @@ class FakePlayerManager:
     ) -> bool:
         self.leave_calls.append((guild_id, clear_saved_channel, disable_stay_connected))
         return self.left
+
+    async def handle_external_disconnect(self, guild_id: int) -> bool:
+        self.external_disconnect_calls.append(guild_id)
+        return self.externally_disconnected
 
     def current_track(self, guild_id: int):
         return None
@@ -112,9 +118,15 @@ class FakeVoiceState:
 
 
 class FakeVoiceMember:
-    def __init__(self, guild: FakeGuild, bot: bool = False) -> None:
+    def __init__(
+        self,
+        guild: FakeGuild,
+        bot: bool = False,
+        member_id: int = 111,
+    ) -> None:
         self.guild = guild
         self.bot = bot
+        self.id = member_id
 
 
 class FakePermissions:
@@ -278,6 +290,60 @@ async def test_voice_state_update_checks_leave_when_member_leaves_bot_channel() 
     )
 
     assert player_manager.leave_if_alone_calls == [guild.id]
+
+
+async def test_voice_state_update_treats_self_disconnect_like_manual_leave() -> None:
+    bot_user_id = 999
+    bot_channel = FakeVoiceChannel(456)
+    guild = FakeGuild(123, voice_client=None)
+    player_manager = FakePlayerManager()
+    refreshed: list[int] = []
+    bot = object.__new__(LofiDiscordBot)
+    bot.player_manager = player_manager
+    bot._connection = SimpleNamespace(user=SimpleNamespace(id=bot_user_id))
+
+    async def refresh_panel(guild_id: int) -> None:
+        refreshed.append(guild_id)
+
+    bot._refresh_panel_message = refresh_panel
+
+    await LofiDiscordBot.on_voice_state_update(
+        bot,
+        FakeVoiceMember(guild, bot=True, member_id=bot_user_id),
+        FakeVoiceState(bot_channel),
+        FakeVoiceState(None),
+    )
+
+    assert player_manager.external_disconnect_calls == [guild.id]
+    assert player_manager.leave_if_alone_calls == []
+    assert refreshed == [guild.id]
+
+
+async def test_voice_state_update_ignores_self_disconnect_after_leave_already_handled() -> None:
+    bot_user_id = 999
+    bot_channel = FakeVoiceChannel(456)
+    guild = FakeGuild(123, voice_client=None)
+    player_manager = FakePlayerManager()
+    player_manager.externally_disconnected = False
+    refreshed: list[int] = []
+    bot = object.__new__(LofiDiscordBot)
+    bot.player_manager = player_manager
+    bot._connection = SimpleNamespace(user=SimpleNamespace(id=bot_user_id))
+
+    async def refresh_panel(guild_id: int) -> None:
+        refreshed.append(guild_id)
+
+    bot._refresh_panel_message = refresh_panel
+
+    await LofiDiscordBot.on_voice_state_update(
+        bot,
+        FakeVoiceMember(guild, bot=True, member_id=bot_user_id),
+        FakeVoiceState(bot_channel),
+        FakeVoiceState(None),
+    )
+
+    assert player_manager.external_disconnect_calls == [guild.id]
+    assert refreshed == []
 
 
 def test_admin_commands_default_to_admin_permission() -> None:

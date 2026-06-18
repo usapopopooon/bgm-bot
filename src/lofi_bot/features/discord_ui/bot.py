@@ -88,9 +88,12 @@ class LofiDiscordBot(commands.Bot):
         before: discord.VoiceState,
         after: discord.VoiceState,
     ) -> None:
-        if member.bot:
-            return
         if before.channel == after.channel:
+            return
+        if self._is_self_voice_member(member):
+            await self._handle_self_voice_disconnect(member.guild, before, after)
+            return
+        if member.bot:
             return
         voice_client = member.guild.voice_client
         if voice_client is None or not voice_client.is_connected():
@@ -100,6 +103,27 @@ class LofiDiscordBot(commands.Bot):
         left = await self.player_manager.leave_if_alone(member.guild)
         if left:
             LOGGER.info("Left empty voice channel guild=%s", member.guild.id)
+
+    def _is_self_voice_member(self, member: discord.Member) -> bool:
+        bot_user = getattr(getattr(self, "_connection", None), "user", None)
+        bot_user_id = getattr(bot_user, "id", None)
+        return bot_user_id is not None and getattr(member, "id", None) == bot_user_id
+
+    async def _handle_self_voice_disconnect(
+        self,
+        guild: discord.Guild,
+        before: discord.VoiceState,
+        after: discord.VoiceState,
+    ) -> None:
+        if before.channel is None or after.channel is not None:
+            return
+
+        disconnected = await self.player_manager.handle_external_disconnect(guild.id)
+        if not disconnected:
+            return
+
+        LOGGER.info("Bot was disconnected manually guild=%s", guild.id)
+        await self._refresh_panel_message(guild.id)
 
     async def _sync_commands(self) -> None:
         if self.settings.discord_guild_id is not None:

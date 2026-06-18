@@ -440,3 +440,37 @@ async def test_manual_leave_clears_saved_session_even_when_not_connected() -> No
     assert result is False
     assert settings.cleared_voice_channels == [123]
     assert settings.stay_updates == [(123, False)]
+
+
+async def test_external_disconnect_clears_saved_session_and_disables_stay() -> None:
+    settings = FakeSettingsRepository(stay_connected=True)
+    manager = PlayerManager(
+        tracks=None,
+        guild_settings=settings,
+        default_category="chill",
+    )
+    player = FakePlayer(is_active=True)
+    manager._players[123] = player
+
+    result = await manager.handle_external_disconnect(123)
+
+    assert result is True
+    assert player.stopped is True
+    assert manager._players == {}
+    assert settings.cleared_voice_channels == [123]
+    assert settings.stay_updates == [(123, False)]
+
+
+async def test_external_disconnect_ignores_already_removed_player() -> None:
+    settings = FakeSettingsRepository(stay_connected=True)
+    manager = PlayerManager(
+        tracks=None,
+        guild_settings=settings,
+        default_category="chill",
+    )
+
+    result = await manager.handle_external_disconnect(123)
+
+    assert result is False
+    assert settings.cleared_voice_channels == []
+    assert settings.stay_updates == []
