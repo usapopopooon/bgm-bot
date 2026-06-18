@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from lofi_bot.features.discord_ui import bot as bot_module
 from lofi_bot.features.discord_ui.bot import LofiDiscordBot
 from lofi_bot.features.guild_settings.repository import GuildSettings
@@ -74,6 +76,14 @@ class FakePlayerManager:
 
     def is_paused(self, guild_id: int) -> bool:
         return False
+
+
+class FakeScheduler:
+    def __init__(self) -> None:
+        self.started = False
+
+    def start(self) -> None:
+        self.started = True
 
 
 class FakeGuild:
@@ -152,6 +162,27 @@ class FakeInteraction:
         self.permissions = FakePermissions(administrator)
         self.response = FakeResponse()
         self.followup = FakeFollowup()
+
+
+async def test_on_ready_presence_does_not_advertise_admin_command() -> None:
+    scheduler = FakeScheduler()
+    activities = []
+    bot = object.__new__(LofiDiscordBot)
+    bot.scheduler = scheduler
+    bot._connection = SimpleNamespace(user="BGM Bot")
+    bot._restored_stay_connected = True
+
+    async def change_presence(*, activity):  # noqa: ANN001
+        activities.append(activity)
+
+    bot.change_presence = change_presence
+
+    await LofiDiscordBot.on_ready(bot)
+
+    assert scheduler.started is True
+    assert isinstance(activities[0], bot_module.discord.CustomActivity)
+    assert activities[0].name == "BGMを流しています"
+    assert "/" not in activities[0].name
 
 
 async def test_restore_stay_connected_voice_reconnects_saved_channels(monkeypatch) -> None:

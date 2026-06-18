@@ -76,9 +76,7 @@ class LofiDiscordBot(commands.Bot):
 
     async def on_ready(self) -> None:
         self.scheduler.start()
-        await self.change_presence(
-            activity=discord.Activity(type=discord.ActivityType.listening, name="/vc")
-        )
+        await self.change_presence(activity=discord.CustomActivity(name="BGMを流しています"))
         LOGGER.info("Logged in as %s", self.user)
         if not self._restored_stay_connected:
             self._restored_stay_connected = True
