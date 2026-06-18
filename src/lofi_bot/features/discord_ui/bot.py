@@ -49,6 +49,27 @@ class LofiDiscordBot(commands.Bot):
                 callback=self._vc_command,
             )
         )
+        self.tree.add_command(
+            app_commands.Command(
+                name="volume",
+                description="音量を変更します（管理者のみ）",
+                callback=self._volume_command,
+            )
+        )
+        self.tree.add_command(
+            app_commands.Command(
+                name="stay",
+                description="Stayを切り替えます（管理者のみ）",
+                callback=self._stay_command,
+            )
+        )
+        self.tree.add_command(
+            app_commands.Command(
+                name="leave",
+                description="VCから退出します（管理者のみ）",
+                callback=self._leave_command,
+            )
+        )
         if self.settings.sync_commands:
             await self._sync_commands()
 
@@ -167,9 +188,27 @@ class LofiDiscordBot(commands.Bot):
                     settings.voice_channel_id,
                 )
 
+    async def _reject_non_admin(self, interaction: discord.Interaction, message: str) -> bool:
+        if interaction.guild is None:
+            await interaction.response.send_message("サーバー内で使ってください。", ephemeral=True)
+            return True
+
+        if not interaction.permissions.administrator:
+            await interaction.response.send_message(message, ephemeral=True)
+            return True
+
+        return False
+
+    @app_commands.default_permissions(administrator=True)
     async def _vc_command(self, interaction: discord.Interaction) -> None:
         if interaction.guild is None or not isinstance(interaction.user, discord.Member):
             await interaction.response.send_message("サーバー内で使ってください。", ephemeral=True)
+            return
+
+        if await self._reject_non_admin(
+            interaction,
+            "VC接続できるのは管理者だけです。",
+        ):
             return
 
         member = interaction.user
@@ -213,6 +252,66 @@ class LofiDiscordBot(commands.Bot):
             wait=True,
         )
         await self.guild_settings.update_panel(interaction.guild.id, message.channel.id, message.id)
+
+    @app_commands.default_permissions(administrator=True)
+    @app_commands.describe(percent="1〜100の音量")
+    async def _volume_command(
+        self,
+        interaction: discord.Interaction,
+        percent: app_commands.Range[int, 1, 100],
+    ) -> None:
+        if await self._reject_non_admin(
+            interaction,
+            "音量を変更できるのは管理者だけです。",
+        ):
+            return
+
+        is_playing = await self.player_manager.set_volume(interaction.guild.id, percent / 100)
+        message = f"音量を {percent}% にしました。"
+        if not is_playing:
+            message += " 再生中ではないので、次回 `/vc` から反映します。"
+
+        await interaction.response.send_message(message, ephemeral=True)
+        await self._refresh_panel_message(interaction.guild.id)
+
+    @app_commands.default_permissions(administrator=True)
+    @app_commands.describe(enabled="StayをONにするならtrue、OFFにするならfalse")
+    async def _stay_command(
+        self,
+        interaction: discord.Interaction,
+        enabled: bool,
+    ) -> None:
+        if await self._reject_non_admin(
+            interaction,
+            "Stayを変更できるのは管理者だけです。",
+        ):
+            return
+
+        await self.player_manager.set_stay_connected(interaction.guild.id, enabled)
+        left = False
+        if not enabled:
+            left = await self.player_manager.leave_if_alone(interaction.guild)
+
+        message = f"Stayを {'ON' if enabled else 'OFF'} にしました。"
+        if left:
+            message += " VCが空だったため退出しました。"
+
+        await interaction.response.send_message(message, ephemeral=True)
+        await self._refresh_panel_message(interaction.guild.id)
+
+    @app_commands.default_permissions(administrator=True)
+    async def _leave_command(self, interaction: discord.Interaction) -> None:
+        if await self._reject_non_admin(
+            interaction,
+            "VCから退出できるのは管理者だけです。",
+        ):
+            return
+
+        left = await self.player_manager.leave(interaction.guild.id)
+        message = "VCから退出しました。" if left else "接続中ではありません。"
+
+        await interaction.response.send_message(message, ephemeral=True)
+        await self._refresh_panel_message(interaction.guild.id)
 
     async def _refresh_panel_message(self, guild_id: int) -> None:
         settings = await self.guild_settings.get_or_create(

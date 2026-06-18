@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from lofi_bot.features.discord_ui.views import build_panel_embed
+from lofi_bot.features.discord_ui.views import PlayerControlView, build_panel_embed
 from lofi_bot.features.guild_settings.repository import GuildSettings
 
 
@@ -33,8 +33,20 @@ async def test_panel_embed_includes_source_link_without_category_field() -> None
     fields = {field.name: field.value for field in embed.fields}
 
     assert "Category" not in fields
+    assert "Volume" not in fields
     assert fields["Source"] == (
         "[Jamendo: Chill](https://www.jamendo.com/search?qs=q%3Dchill+relaxation+calm+instrumental)"
     )
     assert fields["Stay"] == "OFF"
     assert fields["Now Playing"] == "準備中"
+
+
+def test_player_control_view_only_includes_skip_button() -> None:
+    view = PlayerControlView(
+        guild_settings=FakeGuildSettingsRepository(),
+        player_manager=FakePlayerManager(),
+    )
+
+    assert [item.custom_id for item in view.children] == [
+        "lofi_bot:skip",
+    ]

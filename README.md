@@ -2,15 +2,16 @@
 
 Discordのボイスチャンネルに接続して、Jamendoのchill系ボーカルなし曲をランダム再生するBotです。
 
-操作はシンプルです。ユーザーがVCに入った状態で `/vc` を実行するとBotが接続し、表示された操作パネルから音量とStay設定を操作できます。
+操作はシンプルです。管理者がVCに入った状態で `/vc` を実行するとBotが接続し、表示された操作パネルから曲送りができます。VC接続、音量、Stay、退出は管理者コマンドから操作します。
 
 ## Features
 
-- `/vc` で実行者がいるVCへ接続
+- 管理者用 `/vc` で実行者がいるVCへ接続
 - カテゴリは `chill` 固定
 - Jamendo APIの `vocalinstrumental=instrumental` でボーカルなし曲だけを取得
-- 操作パネルから1%刻みの音量設定
-- `Skip` / `Stay` / `Leave` ボタンつき操作パネル
+- 管理者用 `/volume` コマンドで1%刻みの音量設定
+- 管理者用 `/stay` / `/leave` コマンドでStayと退出を操作
+- `Skip` ボタンつき操作パネル
 - VCにBot以外のユーザーがいなくなったら自動退出
 - `Stay` がONのサーバーではVCが空でも接続を維持
 - `Stay` がONで接続先VCが保存されている場合は、再起動後に自動で復帰接続
@@ -164,7 +165,7 @@ cp .env.example .env
 docker compose up --build
 ```
 
-Botが起動したら、DiscordでVCに入って `/vc` を実行してください。
+Botが起動したら、Discordで管理者がVCに入って `/vc` を実行してください。
 
 ## Coolify Deployment
 
@@ -209,21 +210,21 @@ BotはDB接続を起動時にリトライするため、Coolify上でPostgresの
 
 ## Commands
 
-ユーザー向けコマンドは1つだけです。
+Slash commands:
 
 ```text
 /vc
+/volume percent:1..100
+/stay enabled:true|false
+/leave
 ```
 
 実行後に表示される操作パネル:
 
 - Source: chillのJamendo検索元リンク
-- `Volume`: `1`〜`100` の数字入力で音量を変更。初期値は `1%`
 - `Skip`: 次の曲へ
-- `Stay`: ONならVCが空でも接続を維持し、再起動後も保存済みVCへ復帰接続。OFFならBot以外がいなくなった時に自動退出
-- `Leave`: VCから退出
 
-カテゴリはchill固定です。既存環境に `DEFAULT_CATEGORY` が残っていても無視されます。音量の直指定コマンドはなく、操作はパネルに寄せています。
+`/vc` `/volume` `/stay` `/leave` は管理者のみ実行できます。`/stay enabled:false` でStayをOFFにした時、VCが空なら自動退出します。カテゴリはchill固定です。既存環境に `DEFAULT_CATEGORY` が残っていても無視されます。
 
 ## Development
 
