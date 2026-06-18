@@ -1,14 +1,13 @@
 # BGM Bot
 
-Discordのボイスチャンネルに接続して、Jamendoのボーカルなし曲をカテゴリ別にランダム再生するBotです。
+Discordのボイスチャンネルに接続して、Jamendoのchill系ボーカルなし曲をランダム再生するBotです。
 
-操作はシンプルです。ユーザーがVCに入った状態で `/vc` を実行するとBotが接続し、表示された操作パネルからカテゴリ、音量、Stay設定を操作できます。
+操作はシンプルです。ユーザーがVCに入った状態で `/vc` を実行するとBotが接続し、表示された操作パネルから音量とStay設定を操作できます。
 
 ## Features
 
 - `/vc` で実行者がいるVCへ接続
-- ドロップダウンでカテゴリを選択
-- `lofi`, `chill`, `hiphop`, `relaxation`, `instrumental`, `beats`
+- カテゴリは `chill` 固定
 - Jamendo APIの `vocalinstrumental=instrumental` でボーカルなし曲だけを取得
 - 操作パネルから1%刻みの音量設定
 - `Skip` / `Stay` / `Leave` ボタンつき操作パネル
@@ -45,7 +44,7 @@ Botの基本フロー:
 /vc
   -> 実行者のVCへ接続
   -> 操作パネルを投稿
-  -> DBに保存済みの選択カテゴリからランダム再生
+  -> chillカテゴリからランダム再生
 
 VCにBot以外のユーザーがいなくなった場合
   -> Stay OFFなら自動退出
@@ -56,7 +55,7 @@ Botの再起動後
   -> 保存カテゴリの再生を再開
 
 毎日 04:00 Asia/Tokyo
-  -> Jamendo APIからカテゴリごとのボーカルなし曲を取得
+  -> Jamendo APIからchillのボーカルなし曲を取得
   -> tracksテーブルへupsert
 ```
 
@@ -88,10 +87,9 @@ Botコンテナには `ffmpeg` を入れています。
 | `POSTGRES_HOST` | `127.0.0.1` | `DATABASE_URL` 未指定時のDBホスト |
 | `POSTGRES_PORT` | `5432` | `DATABASE_URL` 未指定時のDBポート |
 | `DISCORD_GUILD_ID` | empty | 開発用。指定するとslash commandを対象ギルドへ即時同期 |
-| `DEFAULT_CATEGORY` | `lofi` | 初期カテゴリ |
 | `JAMENDO_REFRESH_HOUR` | `4` | 毎日同期する時刻 |
 | `REFRESH_TIMEZONE` | `Asia/Tokyo` | 同期時刻のタイムゾーン |
-| `JAMENDO_LIMIT_PER_CATEGORY` | `200` | カテゴリごとの取得上限。Jamendo API上限に合わせて最大200 |
+| `JAMENDO_LIMIT_PER_CATEGORY` | `200` | chill曲の取得上限。Jamendo API上限に合わせて最大200 |
 | `SYNC_COMMANDS` | `true` | 起動時にslash commandを同期するか |
 
 `.env.example`:
@@ -105,7 +103,6 @@ SERVICE_PASSWORD_POSTGRES=change-me
 # EXTERNAL_DATABASE_URL=postgresql://lofi:change-me@example.internal:5432/lofi
 
 DISCORD_GUILD_ID=
-DEFAULT_CATEGORY=lofi
 JAMENDO_REFRESH_HOUR=4
 REFRESH_TIMEZONE=Asia/Tokyo
 JAMENDO_LIMIT_PER_CATEGORY=200
@@ -220,14 +217,14 @@ BotはDB接続を起動時にリトライするため、Coolify上でPostgresの
 
 実行後に表示される操作パネル:
 
-- Category select: `lofi`, `chill`, `hiphop`, `relaxation`, `instrumental`, `beats`
-- Source: 選択中カテゴリのJamendo検索元リンク
+- Category: `chill` 固定
+- Source: chillのJamendo検索元リンク
 - `Volume`: `1`〜`100` の数字入力で音量を変更。初期値は `1%`
 - `Skip`: 次の曲へ
 - `Stay`: ONならVCが空でも接続を維持し、再起動後も保存済みVCへ復帰接続。OFFならBot以外がいなくなった時に自動退出
 - `Leave`: VCから退出
 
-カテゴリや音量の直指定コマンドはありません。操作はパネルに寄せています。
+カテゴリはchill固定です。既存環境に `DEFAULT_CATEGORY` が残っていても無視されます。音量の直指定コマンドはなく、操作はパネルに寄せています。
 
 ## Development
 
@@ -287,7 +284,6 @@ Workflow:
 - Jamendo APIが一時的に0件を返したカテゴリでは、既存キャッシュを保持します。
 - 再生に失敗した曲は失敗回数を記録し、一定回数で無効化します。
 - 起動直後に曲キャッシュが空の場合は、同期完了後に再生を再試行します。
-- `chill` と `relaxation` はタグが近いため、上位曲が被ることがあります。
 - 音源URLは長期固定とは限らないため、毎日同期してメタデータを更新します。
 
 ## License and Attribution

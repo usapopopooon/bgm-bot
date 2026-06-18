@@ -4,7 +4,11 @@ import logging
 
 import discord
 
-from lofi_bot.features.catalog.categories import CATEGORIES, build_category_source_url
+from lofi_bot.features.catalog.categories import (
+    CATEGORIES,
+    DEFAULT_CATEGORY,
+    build_category_source_url,
+)
 from lofi_bot.features.guild_settings.repository import GuildSettingsRepository
 from lofi_bot.features.playback.manager import PlayerManager
 
@@ -13,48 +17,6 @@ LOGGER = logging.getLogger(__name__)
 
 def format_volume(volume: float) -> str:
     return f"{round(volume * 100)}%"
-
-
-class CategorySelect(discord.ui.Select):
-    def __init__(self) -> None:
-        options = [
-            discord.SelectOption(
-                label=category.label,
-                value=category.slug,
-                description=category.description[:100],
-            )
-            for category in CATEGORIES.values()
-        ]
-        super().__init__(
-            placeholder="カテゴリを選択",
-            min_values=1,
-            max_values=1,
-            options=options,
-            custom_id="lofi_bot:category_select",
-            row=0,
-        )
-
-    async def callback(self, interaction: discord.Interaction) -> None:
-        if interaction.guild is None or not isinstance(self.view, PlayerControlView):
-            await interaction.response.send_message("サーバー内で使ってください。", ephemeral=True)
-            return
-
-        category_slug = self.values[0]
-        is_playing = await self.view.player_manager.set_category(
-            interaction.guild.id,
-            category_slug,
-        )
-        embed = await build_panel_embed(
-            guild_id=interaction.guild.id,
-            guild_settings=self.view.guild_settings,
-            player_manager=self.view.player_manager,
-            default_category=self.view.default_category,
-        )
-        if not is_playing:
-            embed.description = (
-                "カテゴリを保存しました。再生するにはVCに入って `/vc` を使ってください。"
-            )
-        await interaction.response.edit_message(embed=embed, view=self.view)
 
 
 class VolumeModal(discord.ui.Modal):
@@ -246,13 +208,12 @@ class PlayerControlView(discord.ui.View):
         self,
         guild_settings: GuildSettingsRepository,
         player_manager: PlayerManager,
-        default_category: str = "lofi",
+        default_category: str = DEFAULT_CATEGORY,
     ) -> None:
         super().__init__(timeout=None)
         self.guild_settings = guild_settings
         self.player_manager = player_manager
         self.default_category = default_category
-        self.add_item(CategorySelect())
         self.add_item(VolumeButton())
         self.add_item(SkipButton())
         self.add_item(StayButton())
@@ -263,15 +224,15 @@ async def build_panel_embed(
     guild_id: int,
     guild_settings: GuildSettingsRepository,
     player_manager: PlayerManager,
-    default_category: str = "lofi",
+    default_category: str = DEFAULT_CATEGORY,
 ) -> discord.Embed:
     settings = await guild_settings.get_or_create(guild_id, default_category)
-    category = CATEGORIES[settings.selected_category]
+    category = CATEGORIES[DEFAULT_CATEGORY]
     track = player_manager.current_track(guild_id)
 
     embed = discord.Embed(
         title="BGM Bot",
-        description="カテゴリを選ぶと、その雰囲気に合う曲をランダムに再生します。",
+        description="Chillのボーカルなし曲をランダムに再生します。",
         color=discord.Color.blurple(),
     )
     embed.add_field(name="Category", value=category.label, inline=True)

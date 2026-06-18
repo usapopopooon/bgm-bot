@@ -43,7 +43,7 @@ async def test_restore_stay_connected_voice_reconnects_saved_channels(monkeypatc
     settings = GuildSettings(
         guild_id=guild.id,
         voice_channel_id=channel.id,
-        selected_category="lofi",
+        selected_category="chill",
         volume=0.01,
         stay_connected=True,
         panel_channel_id=None,
@@ -77,7 +77,7 @@ async def test_restore_stay_connected_voice_skips_missing_guild(monkeypatch) -> 
     settings = GuildSettings(
         guild_id=123,
         voice_channel_id=channel.id,
-        selected_category="lofi",
+        selected_category="chill",
         volume=0.01,
         stay_connected=True,
         panel_channel_id=None,

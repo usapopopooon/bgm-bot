@@ -12,45 +12,15 @@ class RankingCategory:
     fuzzytags: tuple[str, ...]
 
 
-DEFAULT_CATEGORY = "lofi"
+DEFAULT_CATEGORY = "chill"
 JAMENDO_SEARCH_URL = "https://www.jamendo.com/search"
 
 CATEGORIES: dict[str, RankingCategory] = {
-    "lofi": RankingCategory(
-        slug="lofi",
-        label="Lofi",
-        description="Lofi, chillhop, mellow beats",
-        fuzzytags=("lofi", "chillhop", "beats"),
-    ),
     "chill": RankingCategory(
         slug="chill",
         label="Chill",
         description="Relaxed and calm tracks",
         fuzzytags=("chill", "relaxation", "calm"),
-    ),
-    "hiphop": RankingCategory(
-        slug="hiphop",
-        label="Hip Hop",
-        description="Hip hop and beat-focused tracks",
-        fuzzytags=("hiphop", "beats", "instrumental"),
-    ),
-    "relaxation": RankingCategory(
-        slug="relaxation",
-        label="Relaxation",
-        description="Ambient and relaxing background music",
-        fuzzytags=("relaxation", "ambient", "calm"),
-    ),
-    "instrumental": RankingCategory(
-        slug="instrumental",
-        label="Instrumental",
-        description="Instrumental-only tracks",
-        fuzzytags=("instrumental", "background", "soundtrack"),
-    ),
-    "beats": RankingCategory(
-        slug="beats",
-        label="Beats",
-        description="Beats, hip hop, and electronic grooves",
-        fuzzytags=("beats", "hiphop", "electronic"),
     ),
 }
 

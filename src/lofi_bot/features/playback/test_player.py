@@ -20,7 +20,7 @@ async def test_track_change_notifies_panel_refresh_callback() -> None:
         voice_client=FakeVoiceClient(),
         tracks=None,
         guild_settings=None,
-        category_slug="lofi",
+        category_slug="chill",
         volume=0.01,
         on_track_changed=refresh_panel,
     )

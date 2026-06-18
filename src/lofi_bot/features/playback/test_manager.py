@@ -55,7 +55,7 @@ async def test_skip_returns_false_for_disconnected_player() -> None:
     manager = PlayerManager(
         tracks=None,
         guild_settings=FakeSettingsRepository(),
-        default_category="lofi",
+        default_category="chill",
     )
     player = FakePlayer(is_active=False)
     manager._players[123] = player
@@ -71,7 +71,7 @@ async def test_set_category_still_persists_but_does_not_play_disconnected_player
     manager = PlayerManager(
         tracks=None,
         guild_settings=settings,
-        default_category="lofi",
+        default_category="chill",
     )
     player = FakePlayer(is_active=False)
     manager._players[123] = player
@@ -88,7 +88,7 @@ async def test_set_volume_persists_and_applies_for_active_player() -> None:
     manager = PlayerManager(
         tracks=None,
         guild_settings=settings,
-        default_category="lofi",
+        default_category="chill",
     )
     player = FakePlayer(is_active=True)
     manager._players[123] = player
@@ -105,7 +105,7 @@ async def test_set_volume_persists_but_does_not_apply_for_disconnected_player() 
     manager = PlayerManager(
         tracks=None,
         guild_settings=settings,
-        default_category="lofi",
+        default_category="chill",
     )
     player = FakePlayer(is_active=False)
     manager._players[123] = player
@@ -121,7 +121,7 @@ async def test_set_track_changed_callback_updates_existing_players() -> None:
     manager = PlayerManager(
         tracks=None,
         guild_settings=FakeSettingsRepository(),
-        default_category="lofi",
+        default_category="chill",
     )
     player = FakePlayer(is_active=True)
     manager._players[123] = player
@@ -164,7 +164,7 @@ async def test_leave_if_alone_disconnects_when_only_bots_remain() -> None:
     manager = PlayerManager(
         tracks=None,
         guild_settings=settings,
-        default_category="lofi",
+        default_category="chill",
     )
     player = FakePlayer(is_active=True)
     manager._players[123] = player
@@ -189,7 +189,7 @@ async def test_leave_if_alone_keeps_connected_when_stay_is_enabled() -> None:
     manager = PlayerManager(
         tracks=None,
         guild_settings=settings,
-        default_category="lofi",
+        default_category="chill",
     )
     player = FakePlayer(is_active=True)
     manager._players[123] = player
@@ -207,7 +207,7 @@ async def test_leave_if_alone_keeps_connected_when_humans_remain() -> None:
     manager = PlayerManager(
         tracks=None,
         guild_settings=settings,
-        default_category="lofi",
+        default_category="chill",
     )
     player = FakePlayer(is_active=True)
     manager._players[123] = player
@@ -225,7 +225,7 @@ async def test_set_stay_connected_persists_setting() -> None:
     manager = PlayerManager(
         tracks=None,
         guild_settings=settings,
-        default_category="lofi",
+        default_category="chill",
     )
 
     await manager.set_stay_connected(123, True)

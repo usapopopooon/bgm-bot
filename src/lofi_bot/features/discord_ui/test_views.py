@@ -27,13 +27,13 @@ async def test_panel_embed_includes_category_source_link() -> None:
         guild_id=123,
         guild_settings=FakeGuildSettingsRepository(),
         player_manager=FakePlayerManager(),
-        default_category="lofi",
+        default_category="chill",
     )
 
     fields = {field.name: field.value for field in embed.fields}
 
     assert fields["Source"] == (
-        "[Jamendo: Lofi](https://www.jamendo.com/search?qs=q%3Dlofi+chillhop+beats+instrumental)"
+        "[Jamendo: Chill](https://www.jamendo.com/search?qs=q%3Dchill+relaxation+calm+instrumental)"
     )
     assert fields["Stay"] == "OFF"
     assert fields["Now Playing"] == "準備中"

@@ -5,13 +5,13 @@ from lofi_bot.features.catalog.jamendo import JamendoClient
 def test_build_params_uses_top_ranking_and_audio_format() -> None:
     client = JamendoClient("client-id")
 
-    params = client.build_params(get_category("lofi"), 500)
+    params = client.build_params(get_category("chill"), 500)
 
     assert params["client_id"] == "client-id"
     assert params["limit"] == 200
     assert params["order"] == "popularity_total"
     assert params["audioformat"] == "mp32"
-    assert params["fuzzytags"] == "lofi chillhop beats"
+    assert params["fuzzytags"] == "chill relaxation calm"
     assert params["vocalinstrumental"] == "instrumental"
 
 

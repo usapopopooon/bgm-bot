@@ -75,7 +75,7 @@ class Database:
                 CREATE TABLE IF NOT EXISTS guild_settings (
                     guild_id BIGINT PRIMARY KEY,
                     voice_channel_id BIGINT,
-                    selected_category TEXT NOT NULL DEFAULT 'lofi',
+                    selected_category TEXT NOT NULL DEFAULT 'chill',
                     volume REAL NOT NULL DEFAULT 0.01,
                     stay_connected BOOLEAN NOT NULL DEFAULT FALSE,
                     panel_channel_id BIGINT,
@@ -88,6 +88,11 @@ class Database:
 
                 ALTER TABLE guild_settings
                     ADD COLUMN IF NOT EXISTS stay_connected BOOLEAN NOT NULL DEFAULT FALSE;
+
+                UPDATE guild_settings
+                SET selected_category = 'chill',
+                    updated_at = now()
+                WHERE selected_category <> 'chill';
 
                 CREATE TABLE IF NOT EXISTS play_history (
                     id BIGSERIAL PRIMARY KEY,

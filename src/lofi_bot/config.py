@@ -4,7 +4,7 @@ import os
 from dataclasses import dataclass
 from urllib.parse import quote
 
-from lofi_bot.features.catalog.categories import CATEGORIES, DEFAULT_CATEGORY
+from lofi_bot.features.catalog.categories import DEFAULT_CATEGORY
 
 
 def _required(name: str) -> str:
@@ -68,16 +68,11 @@ class Settings:
 
 
 def load_settings() -> Settings:
-    default_category = os.getenv("DEFAULT_CATEGORY", DEFAULT_CATEGORY).strip() or DEFAULT_CATEGORY
-    if default_category not in CATEGORIES:
-        allowed = ", ".join(CATEGORIES)
-        raise RuntimeError(f"DEFAULT_CATEGORY must be one of: {allowed}")
-
     return Settings(
         discord_token=_required("DISCORD_TOKEN"),
         jamendo_client_id=_required("JAMENDO_CLIENT_ID"),
         database_url=_database_url(),
-        default_category=default_category,
+        default_category=DEFAULT_CATEGORY,
         jamendo_refresh_hour=int(os.getenv("JAMENDO_REFRESH_HOUR", "4")),
         refresh_timezone=os.getenv("REFRESH_TIMEZONE", "Asia/Tokyo"),
         jamendo_limit_per_category=int(os.getenv("JAMENDO_LIMIT_PER_CATEGORY", "200")),

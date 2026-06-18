@@ -22,6 +22,22 @@ def test_load_settings_uses_explicit_database_url(monkeypatch: pytest.MonkeyPatc
     settings = load_settings()
 
     assert settings.database_url == "postgresql://user:password@example:5432/app"
+    assert settings.default_category == "chill"
+
+
+def test_load_settings_ignores_default_category_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "os.environ",
+        {
+            **BASE_ENV,
+            "DATABASE_URL": "postgresql://user:password@example:5432/app",
+            "DEFAULT_CATEGORY": "lofi",
+        },
+    )
+
+    settings = load_settings()
+
+    assert settings.default_category == "chill"
 
 
 def test_load_settings_prefers_external_database_url(

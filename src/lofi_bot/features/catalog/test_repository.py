@@ -30,7 +30,7 @@ async def test_get_random_track_only_selects_instrumental_cache() -> None:
     pool = FakePool()
     repository = CatalogRepository(pool)
 
-    result = await repository.get_random_track(guild_id=123, category_slug="lofi")
+    result = await repository.get_random_track(guild_id=123, category_slug="chill")
 
     assert result is None
     assert len(pool.fetchrow_calls) == 2
