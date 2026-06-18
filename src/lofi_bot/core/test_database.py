@@ -6,6 +6,33 @@ from lofi_bot.core import database as database_module
 from lofi_bot.core.database import Database
 
 
+class FakeConnection:
+    def __init__(self) -> None:
+        self.statements: list[str] = []
+
+    async def execute(self, statement: str) -> None:
+        self.statements.append(statement)
+
+
+class FakeAcquire:
+    def __init__(self, connection: FakeConnection) -> None:
+        self._connection = connection
+
+    async def __aenter__(self) -> FakeConnection:
+        return self._connection
+
+    async def __aexit__(self, exc_type: object, exc: object, traceback: object) -> None:
+        return None
+
+
+class FakePool:
+    def __init__(self) -> None:
+        self.connection = FakeConnection()
+
+    def acquire(self) -> FakeAcquire:
+        return FakeAcquire(self.connection)
+
+
 @pytest.mark.asyncio
 async def test_connect_retries_until_database_is_ready(monkeypatch: pytest.MonkeyPatch) -> None:
     pool = object()
@@ -51,3 +78,16 @@ async def test_connect_raises_after_retry_attempts(monkeypatch: pytest.MonkeyPat
         await database.connect(attempts=3, delay_seconds=0.5)
 
     assert sleeps == [0.5, 0.5]
+
+
+@pytest.mark.asyncio
+async def test_migrate_sets_default_volume_to_three_percent() -> None:
+    pool = FakePool()
+    database = Database("postgresql://lofi:password@db:5432/lofi")
+    database.pool = pool
+
+    await database.migrate()
+
+    statement = pool.connection.statements[0]
+    assert "volume REAL NOT NULL DEFAULT 0.03" in statement
+    assert "ALTER COLUMN volume SET DEFAULT 0.03" in statement
