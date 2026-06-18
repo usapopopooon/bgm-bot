@@ -1,4 +1,4 @@
-# Lofi Bot
+# BGM Bot
 
 Discordのボイスチャンネルに常駐して、Jamendoのランキング上位曲をカテゴリ別にランダム再生するBotです。
 

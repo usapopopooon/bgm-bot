@@ -233,7 +233,7 @@ async def build_panel_embed(
     track = player_manager.current_track(guild_id)
 
     embed = discord.Embed(
-        title="Lofi Bot",
+        title="BGM Bot",
         description="ランキングカテゴリを選ぶと、その上位曲からランダムに再生します。",
         color=discord.Color.blurple(),
     )
