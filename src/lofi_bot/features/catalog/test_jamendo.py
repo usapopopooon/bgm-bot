@@ -11,7 +11,7 @@ def test_build_params_uses_top_ranking_and_audio_format() -> None:
     assert params["limit"] == 200
     assert params["order"] == "popularity_total"
     assert params["audioformat"] == "mp32"
-    assert params["fuzzytags"] == "chill relaxation calm"
+    assert params["fuzzytags"] == "chill"
     assert params["vocalinstrumental"] == "instrumental"
 
 

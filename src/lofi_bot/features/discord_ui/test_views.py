@@ -53,9 +53,7 @@ async def test_panel_embed_uses_japanese_labels_without_admin_status() -> None:
     assert "Stay" not in fields
     assert embed.title == "BGMボット"
     assert embed.description == "チル系のボーカルなし曲をランダムに再生します。"
-    assert fields["検索元"] == (
-        "[Jamendo: チル](https://www.jamendo.com/search?qs=q%3Dchill+relaxation+calm+instrumental)"
-    )
+    assert fields["検索元"] == "[Jamendo: chill](https://www.jamendo.com/search?q=chill)"
     assert fields["再生中"] == "準備中"
     assert "Progress" not in fields
     assert embed.footer.text == "パネルが流れたら /panel で再投稿できます。"

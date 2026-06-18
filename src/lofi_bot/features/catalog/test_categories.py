@@ -14,6 +14,4 @@ def test_categories_are_fixed_for_dropdown() -> None:
 def test_category_source_url_links_to_jamendo_search() -> None:
     category = get_category("chill")
 
-    assert build_category_source_url(category) == (
-        "https://www.jamendo.com/search?qs=q%3Dchill+relaxation+calm+instrumental"
-    )
+    assert build_category_source_url(category) == "https://www.jamendo.com/search?q=chill"

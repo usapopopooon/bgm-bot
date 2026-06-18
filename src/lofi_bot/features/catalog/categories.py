@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from urllib.parse import urlencode
+from urllib.parse import quote
 
 
 @dataclass(frozen=True)
@@ -20,7 +20,7 @@ CATEGORIES: dict[str, RankingCategory] = {
         slug="chill",
         label="Chill",
         description="Relaxed and calm tracks",
-        fuzzytags=("chill", "relaxation", "calm"),
+        fuzzytags=("chill",),
     ),
 }
 
@@ -34,6 +34,5 @@ def get_category(slug: str) -> RankingCategory:
 
 
 def build_category_source_url(category: RankingCategory) -> str:
-    query_tags = (*category.fuzzytags, "instrumental")
-    query = " ".join(dict.fromkeys(query_tags))
-    return f"{JAMENDO_SEARCH_URL}?{urlencode({'qs': f'q={query}'})}"
+    query = " ".join(dict.fromkeys(category.fuzzytags))
+    return f"{JAMENDO_SEARCH_URL}?q={quote(query)}"

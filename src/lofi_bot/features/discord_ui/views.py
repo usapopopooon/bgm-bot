@@ -111,7 +111,7 @@ async def build_panel_embed(
     embed.set_footer(text="パネルが流れたら /panel で再投稿できます。")
     embed.add_field(
         name="検索元",
-        value=f"[Jamendo: チル]({build_category_source_url(category)})",
+        value=f"[Jamendo: {category.slug}]({build_category_source_url(category)})",
         inline=True,
     )
 
