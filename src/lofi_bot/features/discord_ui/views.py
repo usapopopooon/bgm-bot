@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import logging
+
 import discord
 
 from lofi_bot.features.catalog.categories import CATEGORIES
 from lofi_bot.features.guild_settings.repository import GuildSettingsRepository
 from lofi_bot.features.playback.manager import PlayerManager
+
+LOGGER = logging.getLogger(__name__)
 
 
 def format_volume(volume: float) -> str:
@@ -44,6 +48,7 @@ class CategorySelect(discord.ui.Select):
             guild_id=interaction.guild.id,
             guild_settings=self.view.guild_settings,
             player_manager=self.view.player_manager,
+            default_category=self.view.default_category,
         )
         if not is_playing:
             embed.description = (
@@ -59,11 +64,13 @@ class VolumeModal(discord.ui.Modal):
         guild_settings: GuildSettingsRepository,
         player_manager: PlayerManager,
         default_percent: int,
+        default_category: str,
     ) -> None:
         super().__init__(title="音量設定")
         self.guild_id = guild_id
         self.guild_settings = guild_settings
         self.player_manager = player_manager
+        self.default_category = default_category
         self.percent = discord.ui.TextInput(
             label="音量",
             placeholder="1〜100",
@@ -96,18 +103,26 @@ class VolumeModal(discord.ui.Modal):
         if not is_playing:
             message += " 再生中ではないので、次回 `/vc` から反映します。"
 
+        await interaction.response.send_message(message, ephemeral=True)
+
         if interaction.message is not None:
             embed = await build_panel_embed(
                 guild_id=self.guild_id,
                 guild_settings=self.guild_settings,
                 player_manager=self.player_manager,
+                default_category=self.default_category,
             )
-            await interaction.message.edit(
-                embed=embed,
-                view=PlayerControlView(self.guild_settings, self.player_manager),
-            )
-
-        await interaction.response.send_message(message, ephemeral=True)
+            try:
+                await interaction.message.edit(
+                    embed=embed,
+                    view=PlayerControlView(
+                        self.guild_settings,
+                        self.player_manager,
+                        default_category=self.default_category,
+                    ),
+                )
+            except discord.HTTPException:
+                LOGGER.warning("Failed to refresh volume panel guild=%s", self.guild_id)
 
 
 class VolumeButton(discord.ui.Button):
@@ -124,13 +139,17 @@ class VolumeButton(discord.ui.Button):
             await interaction.response.send_message("サーバー内で使ってください。", ephemeral=True)
             return
 
-        settings = await self.view.guild_settings.get_or_create(interaction.guild.id, "lofi")
+        settings = await self.view.guild_settings.get_or_create(
+            interaction.guild.id,
+            self.view.default_category,
+        )
         await interaction.response.send_modal(
             VolumeModal(
                 guild_id=interaction.guild.id,
                 guild_settings=self.view.guild_settings,
                 player_manager=self.view.player_manager,
                 default_percent=round(settings.volume * 100),
+                default_category=self.view.default_category,
             )
         )
 
@@ -154,6 +173,7 @@ class SkipButton(discord.ui.Button):
             guild_id=interaction.guild.id,
             guild_settings=self.view.guild_settings,
             player_manager=self.view.player_manager,
+            default_category=self.view.default_category,
         )
         if not skipped:
             embed.description = "再生中ではありません。VCに入って `/vc` を使ってください。"
@@ -179,6 +199,7 @@ class LeaveButton(discord.ui.Button):
             guild_id=interaction.guild.id,
             guild_settings=self.view.guild_settings,
             player_manager=self.view.player_manager,
+            default_category=self.view.default_category,
         )
         embed.description = "VCから退出しました。"
         await interaction.response.edit_message(embed=embed, view=self.view)
@@ -189,10 +210,12 @@ class PlayerControlView(discord.ui.View):
         self,
         guild_settings: GuildSettingsRepository,
         player_manager: PlayerManager,
+        default_category: str = "lofi",
     ) -> None:
         super().__init__(timeout=None)
         self.guild_settings = guild_settings
         self.player_manager = player_manager
+        self.default_category = default_category
         self.add_item(CategorySelect())
         self.add_item(VolumeButton())
         self.add_item(SkipButton())

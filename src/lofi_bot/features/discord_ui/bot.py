@@ -33,7 +33,13 @@ class LofiDiscordBot(commands.Bot):
         self.scheduler = scheduler
 
     async def setup_hook(self) -> None:
-        self.add_view(PlayerControlView(self.guild_settings, self.player_manager))
+        self.add_view(
+            PlayerControlView(
+                self.guild_settings,
+                self.player_manager,
+                default_category=self.settings.default_category,
+            )
+        )
         self.tree.add_command(
             app_commands.Command(
                 name="vc",
@@ -99,7 +105,11 @@ class LofiDiscordBot(commands.Bot):
         )
         message = await interaction.followup.send(
             embed=embed,
-            view=PlayerControlView(self.guild_settings, self.player_manager),
+            view=PlayerControlView(
+                self.guild_settings,
+                self.player_manager,
+                default_category=self.settings.default_category,
+            ),
             wait=True,
         )
         await self.guild_settings.update_panel(interaction.guild.id, message.channel.id, message.id)
