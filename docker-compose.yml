@@ -6,11 +6,11 @@ services:
     memswap_limit: 256m
     cpus: "0.50"
     depends_on:
-      - db
+      - postgres
     environment:
       DISCORD_TOKEN: ${DISCORD_TOKEN:?}
       JAMENDO_CLIENT_ID: ${JAMENDO_CLIENT_ID:?}
-      DATABASE_URL: postgresql://lofi:${SERVICE_PASSWORD_POSTGRES:-${POSTGRES_PASSWORD:-change-me}}@db:5432/lofi
+      DATABASE_URL: ${DATABASE_URL:-postgresql://lofi:${SERVICE_PASSWORD_POSTGRES:-${POSTGRES_PASSWORD:-change-me}}@lofi-postgres:5432/lofi}
       DEFAULT_CATEGORY: ${DEFAULT_CATEGORY:-lofi}
       DISCORD_GUILD_ID: ${DISCORD_GUILD_ID:-}
       JAMENDO_REFRESH_HOUR: ${JAMENDO_REFRESH_HOUR:-4}
@@ -18,7 +18,7 @@ services:
       JAMENDO_LIMIT_PER_CATEGORY: ${JAMENDO_LIMIT_PER_CATEGORY:-200}
       SYNC_COMMANDS: ${SYNC_COMMANDS:-true}
 
-  db:
+  postgres:
     image: postgres:16-alpine
     restart: unless-stopped
     mem_limit: 256m
@@ -41,8 +41,14 @@ services:
       POSTGRES_PASSWORD: ${SERVICE_PASSWORD_POSTGRES:-${POSTGRES_PASSWORD:-change-me}}
     volumes:
       - postgres-data:/var/lib/postgresql/data
+    networks:
+      default:
+        aliases:
+          - lofi-postgres
+          - postgres
+          - db
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U lofi -d lofi"]
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U lofi -d lofi"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -50,3 +56,6 @@ services:
 
 volumes:
   postgres-data:
+
+networks:
+  default:

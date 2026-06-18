@@ -70,6 +70,7 @@ Botコンテナには `ffmpeg` を入れています。
 | --- | --- | --- |
 | `SERVICE_PASSWORD_POSTGRES` | Coolify generated | Coolifyの自動生成パスワード。Coolifyではこの値を優先 |
 | `POSTGRES_PASSWORD` | `change-me` | Compose内Postgresユーザー `lofi` のパスワード。主にローカル上書き用 |
+| `DATABASE_URL` | internal Postgres | 外部DBやCoolifyのDBリソースを使う場合の接続URL |
 | `DISCORD_GUILD_ID` | empty | 開発用。指定するとslash commandを対象ギルドへ即時同期 |
 | `DEFAULT_CATEGORY` | `lofi` | 初期カテゴリ |
 | `JAMENDO_REFRESH_HOUR` | `4` | 毎日同期する時刻 |
@@ -85,6 +86,7 @@ JAMENDO_CLIENT_ID=
 
 # Local override. Coolify can generate SERVICE_PASSWORD_POSTGRES automatically.
 POSTGRES_PASSWORD=change-me
+# DATABASE_URL=postgresql://lofi:change-me@lofi-postgres:5432/lofi
 
 DISCORD_GUILD_ID=
 DEFAULT_CATEGORY=lofi
@@ -161,7 +163,9 @@ DISCORD_TOKEN=...
 JAMENDO_CLIENT_ID=...
 ```
 
-`POSTGRES_PASSWORD` は未設定でも構いません。CoolifyではCompose内の `SERVICE_PASSWORD_POSTGRES` からDBパスワードを自動生成し、`bot` と `db` の両方で同じ値を使います。自分で固定したい場合は `SERVICE_PASSWORD_POSTGRES` をCoolify側で設定してください。
+`POSTGRES_PASSWORD` は未設定でも構いません。CoolifyではCompose内の `SERVICE_PASSWORD_POSTGRES` からDBパスワードを自動生成し、`bot` と `postgres` の両方で同じ値を使います。自分で固定したい場合は `SERVICE_PASSWORD_POSTGRES` をCoolify側で設定してください。
+
+Compose内のDBには `lofi-postgres` というnetwork aliasを付けています。CoolifyのPostgresリソースなど外部DBを使う場合は、Coolify側で `DATABASE_URL` を設定するとCompose内の接続先より優先されます。
 
 必要なら開発/検証用に:
 
@@ -176,7 +180,7 @@ Composeには低めのリソース制限を入れています。
 | Service | Memory | CPU |
 | --- | --- | --- |
 | `bot` | 256MB | 0.50 |
-| `db` | 256MB | 0.50 |
+| `postgres` | 256MB | 0.50 |
 
 Postgresも小さめに調整しています。
 
