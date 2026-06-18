@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Awaitable, Callable
 
 import discord
 
@@ -10,6 +11,7 @@ from lofi_bot.features.catalog.repository import CatalogRepository
 from lofi_bot.features.guild_settings.repository import GuildSettingsRepository
 
 LOGGER = logging.getLogger(__name__)
+TrackChangedCallback = Callable[[int], Awaitable[None]]
 
 
 def clamp_volume(volume: float) -> float:
@@ -25,6 +27,7 @@ class GuildPlayer:
         guild_settings: GuildSettingsRepository,
         category_slug: str,
         volume: float,
+        on_track_changed: TrackChangedCallback | None = None,
     ) -> None:
         self.guild_id = guild_id
         self.voice_client = voice_client
@@ -32,6 +35,7 @@ class GuildPlayer:
         self._guild_settings = guild_settings
         self._category_slug = category_slug
         self._volume = clamp_volume(volume)
+        self._on_track_changed = on_track_changed
         self._lock = asyncio.Lock()
         self._stopped = False
         self._retry_task: asyncio.Task[None] | None = None
@@ -55,17 +59,20 @@ class GuildPlayer:
         if isinstance(source, discord.PCMVolumeTransformer):
             source.volume = self._volume
 
+    def set_track_changed_callback(self, callback: TrackChangedCallback | None) -> None:
+        self._on_track_changed = callback
+
     async def set_category(self, category_slug: str) -> None:
         self._category_slug = category_slug
         await self._guild_settings.update_selected_category(self.guild_id, category_slug)
-        self.current_track = None
+        self._set_current_track(None)
         if self.voice_client.is_playing() or self.voice_client.is_paused():
             self.voice_client.stop()
         else:
             await self.play_next()
 
     async def skip(self) -> None:
-        self.current_track = None
+        self._set_current_track(None)
         if self.voice_client.is_playing() or self.voice_client.is_paused():
             self.voice_client.stop()
         else:
@@ -93,7 +100,7 @@ class GuildPlayer:
         for _ in range(5):
             track = await self._tracks.get_random_track(self.guild_id, self._category_slug)
             if track is None or track.id is None:
-                self.current_track = None
+                self._set_current_track(None)
                 LOGGER.warning(
                     "No playable tracks for guild=%s category=%s",
                     self.guild_id,
@@ -105,7 +112,7 @@ class GuildPlayer:
             try:
                 self._cancel_retry()
                 source = self._create_source(track)
-                self.current_track = track
+                self._set_current_track(track)
                 await self._tracks.record_play(self.guild_id, track.id, self._category_slug)
                 self.voice_client.play(source, after=self._after_play(track))
                 LOGGER.info(
@@ -169,3 +176,19 @@ class GuildPlayer:
             await self.play_next()
         except asyncio.CancelledError:
             pass
+
+    def _set_current_track(self, track: Track | None) -> None:
+        self.current_track = track
+        self._notify_track_changed()
+
+    def _notify_track_changed(self) -> None:
+        if self._on_track_changed is None:
+            return
+        task = asyncio.create_task(self._on_track_changed(self.guild_id))
+        task.add_done_callback(self._log_track_changed_error)
+
+    def _log_track_changed_error(self, task: asyncio.Task[None]) -> None:
+        try:
+            task.result()
+        except Exception:
+            LOGGER.exception("Failed to refresh panel after track change guild=%s", self.guild_id)

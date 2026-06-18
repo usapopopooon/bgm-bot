@@ -31,6 +31,7 @@ class LofiDiscordBot(commands.Bot):
         self.guild_settings = guild_settings
         self.player_manager = player_manager
         self.scheduler = scheduler
+        self.player_manager.set_track_changed_callback(self._refresh_panel_message)
 
     async def setup_hook(self) -> None:
         self.add_view(
@@ -113,3 +114,43 @@ class LofiDiscordBot(commands.Bot):
             wait=True,
         )
         await self.guild_settings.update_panel(interaction.guild.id, message.channel.id, message.id)
+
+    async def _refresh_panel_message(self, guild_id: int) -> None:
+        settings = await self.guild_settings.get_or_create(
+            guild_id,
+            self.settings.default_category,
+        )
+        if settings.panel_channel_id is None or settings.panel_message_id is None:
+            return
+
+        try:
+            channel = self.get_channel(settings.panel_channel_id)
+            if channel is None:
+                channel = await self.fetch_channel(settings.panel_channel_id)
+
+            fetch_message = getattr(channel, "fetch_message", None)
+            if fetch_message is None:
+                LOGGER.warning("Panel channel cannot fetch messages guild=%s", guild_id)
+                return
+
+            message = await fetch_message(settings.panel_message_id)
+            embed = await build_panel_embed(
+                guild_id=guild_id,
+                guild_settings=self.guild_settings,
+                player_manager=self.player_manager,
+                default_category=self.settings.default_category,
+            )
+            await message.edit(
+                embed=embed,
+                view=PlayerControlView(
+                    self.guild_settings,
+                    self.player_manager,
+                    default_category=self.settings.default_category,
+                ),
+            )
+        except discord.NotFound:
+            LOGGER.warning("Panel message not found guild=%s", guild_id)
+        except discord.Forbidden:
+            LOGGER.warning("Missing permission to refresh panel guild=%s", guild_id)
+        except discord.HTTPException:
+            LOGGER.exception("Failed to refresh panel guild=%s", guild_id)

@@ -21,6 +21,7 @@ class FakePlayer:
         self.skipped = False
         self.category_slug: str | None = None
         self.volume: float | None = None
+        self.track_changed_callback = None
 
     async def skip(self) -> None:
         self.skipped = True
@@ -30,6 +31,9 @@ class FakePlayer:
 
     def set_volume(self, volume: float) -> None:
         self.volume = volume
+
+    def set_track_changed_callback(self, callback) -> None:
+        self.track_changed_callback = callback
 
 
 async def test_skip_returns_false_for_disconnected_player() -> None:
@@ -96,3 +100,20 @@ async def test_set_volume_persists_but_does_not_apply_for_disconnected_player() 
     assert result is False
     assert settings.volumes == [(123, 1.0)]
     assert player.volume is None
+
+
+async def test_set_track_changed_callback_updates_existing_players() -> None:
+    manager = PlayerManager(
+        tracks=None,
+        guild_settings=FakeSettingsRepository(),
+        default_category="lofi",
+    )
+    player = FakePlayer(is_active=True)
+    manager._players[123] = player
+
+    async def refresh_panel(guild_id: int) -> None:
+        return None
+
+    manager.set_track_changed_callback(refresh_panel)
+
+    assert player.track_changed_callback is refresh_panel

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Awaitable, Callable
 
 import discord
 
@@ -11,6 +12,7 @@ from lofi_bot.features.guild_settings.repository import GuildSettingsRepository
 from lofi_bot.features.playback.player import GuildPlayer, clamp_volume
 
 LOGGER = logging.getLogger(__name__)
+TrackChangedCallback = Callable[[int], Awaitable[None]]
 
 
 class PlayerManager:
@@ -24,6 +26,12 @@ class PlayerManager:
         self._guild_settings = guild_settings
         self._default_category = default_category
         self._players: dict[int, GuildPlayer] = {}
+        self._track_changed_callback: TrackChangedCallback | None = None
+
+    def set_track_changed_callback(self, callback: TrackChangedCallback | None) -> None:
+        self._track_changed_callback = callback
+        for player in self._players.values():
+            player.set_track_changed_callback(callback)
 
     async def connect(self, guild: discord.Guild, channel: discord.VoiceChannel) -> GuildPlayer:
         settings = await self._guild_settings.get_or_create(guild.id, self._default_category)
@@ -45,11 +53,13 @@ class PlayerManager:
                 guild_settings=self._guild_settings,
                 category_slug=settings.selected_category,
                 volume=settings.volume,
+                on_track_changed=self._track_changed_callback,
             )
             self._players[guild.id] = player
         else:
             player.voice_client = voice_client
             player.set_volume(settings.volume)
+            player.set_track_changed_callback(self._track_changed_callback)
 
         return player
 
