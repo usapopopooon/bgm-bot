@@ -7,6 +7,10 @@ from lofi_bot.features.guild_settings.repository import GuildSettingsRepository
 from lofi_bot.features.playback.manager import PlayerManager
 
 
+def format_volume(volume: float) -> str:
+    return f"{round(volume * 100)}%"
+
+
 class CategorySelect(discord.ui.Select):
     def __init__(self) -> None:
         options = [
@@ -23,6 +27,7 @@ class CategorySelect(discord.ui.Select):
             max_values=1,
             options=options,
             custom_id="lofi_bot:category_select",
+            row=0,
         )
 
     async def callback(self, interaction: discord.Interaction) -> None:
@@ -47,12 +52,96 @@ class CategorySelect(discord.ui.Select):
         await interaction.response.edit_message(embed=embed, view=self.view)
 
 
+class VolumeModal(discord.ui.Modal):
+    def __init__(
+        self,
+        guild_id: int,
+        guild_settings: GuildSettingsRepository,
+        player_manager: PlayerManager,
+        default_percent: int,
+    ) -> None:
+        super().__init__(title="音量設定")
+        self.guild_id = guild_id
+        self.guild_settings = guild_settings
+        self.player_manager = player_manager
+        self.percent = discord.ui.TextInput(
+            label="音量",
+            placeholder="1〜100",
+            default=str(default_percent),
+            min_length=1,
+            max_length=3,
+        )
+        self.add_item(self.percent)
+
+    async def on_submit(self, interaction: discord.Interaction) -> None:
+        raw_value = str(self.percent.value).strip().removesuffix("%")
+        try:
+            percent = int(raw_value)
+        except ValueError:
+            await interaction.response.send_message(
+                "音量は1〜100の数字で入力してください。",
+                ephemeral=True,
+            )
+            return
+
+        if percent < 1 or percent > 100:
+            await interaction.response.send_message(
+                "音量は1〜100の範囲で入力してください。",
+                ephemeral=True,
+            )
+            return
+
+        is_playing = await self.player_manager.set_volume(self.guild_id, percent / 100)
+        message = f"音量を {percent}% にしました。"
+        if not is_playing:
+            message += " 再生中ではないので、次回 `/vc` から反映します。"
+
+        if interaction.message is not None:
+            embed = await build_panel_embed(
+                guild_id=self.guild_id,
+                guild_settings=self.guild_settings,
+                player_manager=self.player_manager,
+            )
+            await interaction.message.edit(
+                embed=embed,
+                view=PlayerControlView(self.guild_settings, self.player_manager),
+            )
+
+        await interaction.response.send_message(message, ephemeral=True)
+
+
+class VolumeButton(discord.ui.Button):
+    def __init__(self) -> None:
+        super().__init__(
+            label="Volume",
+            style=discord.ButtonStyle.secondary,
+            custom_id="lofi_bot:volume",
+            row=1,
+        )
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        if interaction.guild is None or not isinstance(self.view, PlayerControlView):
+            await interaction.response.send_message("サーバー内で使ってください。", ephemeral=True)
+            return
+
+        settings = await self.view.guild_settings.get_or_create(interaction.guild.id, "lofi")
+        await interaction.response.send_modal(
+            VolumeModal(
+                guild_id=interaction.guild.id,
+                guild_settings=self.view.guild_settings,
+                player_manager=self.view.player_manager,
+                default_percent=round(settings.volume * 100),
+            )
+        )
+
+
 class SkipButton(discord.ui.Button):
     def __init__(self) -> None:
         super().__init__(
             label="Skip",
             style=discord.ButtonStyle.secondary,
             custom_id="lofi_bot:skip",
+            row=1,
         )
 
     async def callback(self, interaction: discord.Interaction) -> None:
@@ -77,6 +166,7 @@ class LeaveButton(discord.ui.Button):
             label="Leave",
             style=discord.ButtonStyle.danger,
             custom_id="lofi_bot:leave",
+            row=1,
         )
 
     async def callback(self, interaction: discord.Interaction) -> None:
@@ -104,6 +194,7 @@ class PlayerControlView(discord.ui.View):
         self.guild_settings = guild_settings
         self.player_manager = player_manager
         self.add_item(CategorySelect())
+        self.add_item(VolumeButton())
         self.add_item(SkipButton())
         self.add_item(LeaveButton())
 
@@ -124,6 +215,7 @@ async def build_panel_embed(
         color=discord.Color.blurple(),
     )
     embed.add_field(name="Category", value=category.label, inline=True)
+    embed.add_field(name="Volume", value=format_volume(settings.volume), inline=True)
 
     if track is None:
         embed.add_field(name="Now Playing", value="準備中", inline=False)

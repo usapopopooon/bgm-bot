@@ -57,6 +57,19 @@ class GuildSettingsRepository:
             category_slug,
         )
 
+    async def update_volume(self, guild_id: int, volume: float) -> None:
+        await self._pool.execute(
+            """
+            INSERT INTO guild_settings (guild_id, volume)
+            VALUES ($1, $2)
+            ON CONFLICT (guild_id) DO UPDATE
+            SET volume = EXCLUDED.volume,
+                updated_at = now()
+            """,
+            guild_id,
+            volume,
+        )
+
     async def update_panel(
         self,
         guild_id: int,

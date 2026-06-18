@@ -12,6 +12,10 @@ from lofi_bot.features.guild_settings.repository import GuildSettingsRepository
 LOGGER = logging.getLogger(__name__)
 
 
+def clamp_volume(volume: float) -> float:
+    return max(0.0, min(1.0, volume))
+
+
 class GuildPlayer:
     def __init__(
         self,
@@ -20,12 +24,14 @@ class GuildPlayer:
         tracks: CatalogRepository,
         guild_settings: GuildSettingsRepository,
         category_slug: str,
+        volume: float,
     ) -> None:
         self.guild_id = guild_id
         self.voice_client = voice_client
         self._tracks = tracks
         self._guild_settings = guild_settings
         self._category_slug = category_slug
+        self._volume = clamp_volume(volume)
         self._lock = asyncio.Lock()
         self._stopped = False
         self._retry_task: asyncio.Task[None] | None = None
@@ -36,8 +42,18 @@ class GuildPlayer:
         return self._category_slug
 
     @property
+    def volume(self) -> float:
+        return self._volume
+
+    @property
     def is_active(self) -> bool:
         return not self._stopped and self.voice_client.is_connected()
+
+    def set_volume(self, volume: float) -> None:
+        self._volume = clamp_volume(volume)
+        source = getattr(self.voice_client, "source", None)
+        if isinstance(source, discord.PCMVolumeTransformer):
+            source.volume = self._volume
 
     async def set_category(self, category_slug: str) -> None:
         self._category_slug = category_slug
@@ -111,7 +127,7 @@ class GuildPlayer:
             before_options=before_options,
             options="-vn",
         )
-        return discord.PCMVolumeTransformer(audio, volume=0.45)
+        return discord.PCMVolumeTransformer(audio, volume=self._volume)
 
     def _after_play(self, track: Track):
         loop = asyncio.get_running_loop()

@@ -8,7 +8,7 @@ from lofi_bot.features.catalog.categories import get_category
 from lofi_bot.features.catalog.models import Track
 from lofi_bot.features.catalog.repository import CatalogRepository
 from lofi_bot.features.guild_settings.repository import GuildSettingsRepository
-from lofi_bot.features.playback.player import GuildPlayer
+from lofi_bot.features.playback.player import GuildPlayer, clamp_volume
 
 LOGGER = logging.getLogger(__name__)
 
@@ -44,10 +44,12 @@ class PlayerManager:
                 tracks=self._tracks,
                 guild_settings=self._guild_settings,
                 category_slug=settings.selected_category,
+                volume=settings.volume,
             )
             self._players[guild.id] = player
         else:
             player.voice_client = voice_client
+            player.set_volume(settings.volume)
 
         return player
 
@@ -71,6 +73,15 @@ class PlayerManager:
         if player is None or not player.is_active:
             return False
         await player.skip()
+        return True
+
+    async def set_volume(self, guild_id: int, volume: float) -> bool:
+        volume = clamp_volume(volume)
+        await self._guild_settings.update_volume(guild_id, volume)
+        player = self._players.get(guild_id)
+        if player is None or not player.is_active:
+            return False
+        player.set_volume(volume)
         return True
 
     async def leave(self, guild_id: int) -> bool:
