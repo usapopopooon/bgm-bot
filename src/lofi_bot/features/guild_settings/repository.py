@@ -84,6 +84,18 @@ class GuildSettingsRepository:
             stay_connected,
         )
 
+    async def list_stay_connected(self) -> list[GuildSettings]:
+        rows = await self._pool.fetch(
+            """
+            SELECT *
+            FROM guild_settings
+            WHERE stay_connected = TRUE
+              AND voice_channel_id IS NOT NULL
+            ORDER BY guild_id
+            """
+        )
+        return [self._row_to_settings(row) for row in rows]
+
     async def update_panel(
         self,
         guild_id: int,

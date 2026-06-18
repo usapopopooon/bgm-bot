@@ -32,6 +32,7 @@ class LofiDiscordBot(commands.Bot):
         self.player_manager = player_manager
         self.scheduler = scheduler
         self.player_manager.set_track_changed_callback(self._refresh_panel_message)
+        self._restored_stay_connected = False
 
     async def setup_hook(self) -> None:
         self.add_view(
@@ -57,6 +58,9 @@ class LofiDiscordBot(commands.Bot):
             activity=discord.Activity(type=discord.ActivityType.listening, name="/vc")
         )
         LOGGER.info("Logged in as %s", self.user)
+        if not self._restored_stay_connected:
+            self._restored_stay_connected = True
+            await self._restore_stay_connected_voice()
 
     async def on_voice_state_update(
         self,
@@ -81,6 +85,87 @@ class LofiDiscordBot(commands.Bot):
             return
         await self.tree.sync()
         LOGGER.info("Synced global commands")
+
+    async def _restore_stay_connected_voice(self) -> None:
+        settings_list = await self.guild_settings.list_stay_connected()
+        if not settings_list:
+            return
+
+        LOGGER.info("Restoring stay-connected voice sessions count=%s", len(settings_list))
+        for settings in settings_list:
+            if settings.voice_channel_id is None:
+                continue
+
+            guild = self.get_guild(settings.guild_id)
+            if guild is None:
+                LOGGER.warning(
+                    "Cannot restore voice session; guild not found guild=%s",
+                    settings.guild_id,
+                )
+                continue
+
+            channel = self.get_channel(settings.voice_channel_id)
+            if channel is None:
+                try:
+                    channel = await self.fetch_channel(settings.voice_channel_id)
+                except discord.NotFound:
+                    LOGGER.warning(
+                        "Cannot restore voice session; channel not found guild=%s channel=%s",
+                        settings.guild_id,
+                        settings.voice_channel_id,
+                    )
+                    continue
+                except discord.Forbidden:
+                    LOGGER.warning(
+                        "Cannot restore voice session; missing channel access guild=%s channel=%s",
+                        settings.guild_id,
+                        settings.voice_channel_id,
+                    )
+                    continue
+                except discord.HTTPException:
+                    LOGGER.exception(
+                        "Cannot restore voice session; failed to fetch channel guild=%s channel=%s",
+                        settings.guild_id,
+                        settings.voice_channel_id,
+                    )
+                    continue
+
+            if not isinstance(channel, discord.VoiceChannel):
+                LOGGER.warning(
+                    "Cannot restore voice session; saved channel is not a voice channel "
+                    "guild=%s channel=%s",
+                    settings.guild_id,
+                    settings.voice_channel_id,
+                )
+                continue
+
+            try:
+                await self.player_manager.connect(guild, channel)
+                await self.player_manager.start_saved_category(guild)
+                await self._refresh_panel_message(guild.id)
+                LOGGER.info(
+                    "Restored stay-connected voice session guild=%s channel=%s",
+                    settings.guild_id,
+                    settings.voice_channel_id,
+                )
+            except discord.Forbidden:
+                LOGGER.warning(
+                    "Cannot restore voice session; missing voice permission guild=%s channel=%s",
+                    settings.guild_id,
+                    settings.voice_channel_id,
+                )
+            except discord.HTTPException:
+                LOGGER.exception(
+                    "Cannot restore voice session; Discord request failed guild=%s channel=%s",
+                    settings.guild_id,
+                    settings.voice_channel_id,
+                )
+            except Exception:
+                LOGGER.exception(
+                    "Cannot restore voice session guild=%s channel=%s",
+                    settings.guild_id,
+                    settings.voice_channel_id,
+                )
 
     async def _vc_command(self, interaction: discord.Interaction) -> None:
         if interaction.guild is None or not isinstance(interaction.user, discord.Member):
