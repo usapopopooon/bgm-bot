@@ -22,7 +22,7 @@ class FakePlayerManager:
         return None
 
 
-async def test_panel_embed_includes_category_source_link() -> None:
+async def test_panel_embed_includes_source_link_without_category_field() -> None:
     embed = await build_panel_embed(
         guild_id=123,
         guild_settings=FakeGuildSettingsRepository(),
@@ -32,6 +32,7 @@ async def test_panel_embed_includes_category_source_link() -> None:
 
     fields = {field.name: field.value for field in embed.fields}
 
+    assert "Category" not in fields
     assert fields["Source"] == (
         "[Jamendo: Chill](https://www.jamendo.com/search?qs=q%3Dchill+relaxation+calm+instrumental)"
     )

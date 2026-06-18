@@ -217,7 +217,6 @@ BotはDB接続を起動時にリトライするため、Coolify上でPostgresの
 
 実行後に表示される操作パネル:
 
-- Category: `chill` 固定
 - Source: chillのJamendo検索元リンク
 - `Volume`: `1`〜`100` の数字入力で音量を変更。初期値は `1%`
 - `Skip`: 次の曲へ

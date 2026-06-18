@@ -235,7 +235,6 @@ async def build_panel_embed(
         description="Chillのボーカルなし曲をランダムに再生します。",
         color=discord.Color.blurple(),
     )
-    embed.add_field(name="Category", value=category.label, inline=True)
     embed.add_field(
         name="Source",
         value=f"[Jamendo: {category.label}]({build_category_source_url(category)})",
