@@ -44,15 +44,8 @@ class LofiDiscordBot(commands.Bot):
         self.tree.add_command(
             app_commands.Command(
                 name="vc",
-                description="VCに接続して操作パネルを表示します",
+                description="VCへの接続/切断を切り替えて操作パネルを表示します（管理者のみ）",
                 callback=self._vc_command,
-            )
-        )
-        self.tree.add_command(
-            app_commands.Command(
-                name="panel",
-                description="操作パネルを再投稿します",
-                callback=self._panel_command,
             )
         )
         self.tree.add_command(
@@ -310,6 +303,21 @@ class LofiDiscordBot(commands.Bot):
         ):
             return
 
+        voice_client = interaction.guild.voice_client
+        if voice_client is not None and voice_client.is_connected():
+            left = await self.player_manager.leave(
+                interaction.guild.id,
+                clear_saved_channel=True,
+                disable_stay_connected=True,
+            )
+            if not left and voice_client.is_connected():
+                await voice_client.disconnect(force=True)
+                left = True
+            message = "VCから退出しました。" if left else "接続中ではありません。"
+            await interaction.response.send_message(message, ephemeral=True)
+            await self._refresh_panel_message(interaction.guild.id)
+            return
+
         member = interaction.user
         if member.voice is None or member.voice.channel is None:
             await interaction.response.send_message(
@@ -335,14 +343,6 @@ class LofiDiscordBot(commands.Bot):
         await self.player_manager.connect(interaction.guild, member.voice.channel)
         await self.player_manager.start_saved_category(interaction.guild)
 
-        await self._send_panel(interaction)
-
-    async def _panel_command(self, interaction: discord.Interaction) -> None:
-        if interaction.guild is None:
-            await interaction.response.send_message("サーバー内で使ってください。", ephemeral=True)
-            return
-
-        await interaction.response.defer(thinking=True)
         await self._send_panel(interaction)
 
     async def _send_panel(self, interaction: discord.Interaction) -> None:

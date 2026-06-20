@@ -46,6 +46,9 @@ class FakePlayerManager:
         self.external_disconnect_calls: list[int] = []
         self.externally_disconnected = True
 
+    def set_track_changed_callback(self, callback) -> None:  # noqa: ANN001
+        self.track_changed_callback = callback
+
     async def connect(self, guild, channel):  # noqa: ANN001, ANN201
         self.connected.append((guild.id, channel.id))
 
@@ -107,9 +110,14 @@ class FakeBotVoiceClient:
     def __init__(self, channel: FakeVoiceChannel, connected: bool = True) -> None:
         self.channel = channel
         self.connected = connected
+        self.disconnect_calls: list[bool] = []
 
     def is_connected(self) -> bool:
         return self.connected
+
+    async def disconnect(self, *, force: bool = False) -> None:
+        self.disconnect_calls.append(force)
+        self.connected = False
 
 
 class FakeVoiceState:
@@ -127,6 +135,16 @@ class FakeVoiceMember:
         self.guild = guild
         self.bot = bot
         self.id = member_id
+
+
+class FakeMemberVoice:
+    def __init__(self, channel: FakeVoiceChannel | None) -> None:
+        self.channel = channel
+
+
+class FakeCommandMember:
+    def __init__(self, channel: FakeVoiceChannel | None = None) -> None:
+        self.voice = FakeMemberVoice(channel) if channel is not None else None
 
 
 class FakePermissions:
@@ -169,8 +187,20 @@ class FakeFollowup:
 
 
 class FakeInteraction:
-    def __init__(self, guild_id: int | None, administrator: bool) -> None:
-        self.guild = FakeGuild(guild_id) if guild_id is not None else None
+    def __init__(
+        self,
+        guild_id: int | None,
+        administrator: bool,
+        *,
+        user: object | None = None,
+        voice_client=None,  # noqa: ANN001
+    ) -> None:
+        self.guild = (
+            FakeGuild(guild_id, voice_client=voice_client)
+            if guild_id is not None
+            else None
+        )
+        self.user = user if user is not None else SimpleNamespace()
         self.permissions = FakePermissions(administrator)
         self.response = FakeResponse()
         self.followup = FakeFollowup()
@@ -256,6 +286,28 @@ async def test_restore_stay_connected_voice_skips_missing_guild(monkeypatch) -> 
 
     assert player_manager.connected == []
     assert player_manager.started == []
+
+
+async def test_setup_hook_registers_commands_without_panel() -> None:
+    settings = type(
+        "FakeSettings",
+        (),
+        {"default_category": "chill", "sync_commands": False, "discord_guild_id": None},
+    )()
+    bot = LofiDiscordBot(
+        settings=settings,
+        guild_settings=FakeGuildSettingsRepository([]),
+        player_manager=FakePlayerManager(),
+        scheduler=FakeScheduler(),
+    )
+
+    try:
+        await bot.setup_hook()
+
+        command_names = [command.name for command in bot.tree.get_commands()]
+        assert command_names == ["vc", "volume", "stay", "leave"]
+    finally:
+        await bot.close()
 
 
 async def test_voice_state_update_ignores_unrelated_channel_changes() -> None:
@@ -435,7 +487,7 @@ def test_admin_commands_default_to_admin_permission() -> None:
     commands = [
         bot_module.app_commands.Command(
             name="vc",
-            description="VCに接続して操作パネルを表示します",
+            description="VCへの接続/切断を切り替えて操作パネルを表示します（管理者のみ）",
             callback=bot._vc_command,
         ),
         bot_module.app_commands.Command(
@@ -459,30 +511,107 @@ def test_admin_commands_default_to_admin_permission() -> None:
     assert all(command.default_permissions.administrator for command in commands)
 
 
-def test_panel_command_does_not_default_to_admin_permission() -> None:
-    bot = object.__new__(LofiDiscordBot)
-    command = bot_module.app_commands.Command(
-        name="panel",
-        description="操作パネルを再投稿します",
-        callback=bot._panel_command,
-    )
-
-    assert command.default_permissions is None
-
-
-async def test_panel_command_posts_panel_for_non_admin() -> None:
+async def test_vc_command_connects_and_posts_panel_for_admin(monkeypatch) -> None:
     guild_settings = FakeGuildSettingsRepository([])
+    player_manager = FakePlayerManager()
     bot = object.__new__(LofiDiscordBot)
     bot.guild_settings = guild_settings
-    bot.player_manager = FakePlayerManager()
+    bot.player_manager = player_manager
     bot.settings = type("FakeSettings", (), {"default_category": "chill"})()
-    interaction = FakeInteraction(guild_id=123, administrator=False)
+    channel = FakeVoiceChannel(456)
+    interaction = FakeInteraction(
+        guild_id=123,
+        administrator=True,
+        user=FakeCommandMember(channel),
+    )
+    monkeypatch.setattr(bot_module.discord, "Member", FakeCommandMember)
+    monkeypatch.setattr(bot_module.discord, "VoiceChannel", FakeVoiceChannel)
 
-    await LofiDiscordBot._panel_command(bot, interaction)
+    await LofiDiscordBot._vc_command(bot, interaction)
 
     assert interaction.response.deferred is True
+    assert player_manager.connected == [(123, 456)]
+    assert player_manager.started == [123]
     assert len(interaction.followup.messages) == 1
     assert guild_settings.panel_updates == [(123, 456, 789)]
+
+
+async def test_vc_command_toggles_disconnect_for_admin(monkeypatch) -> None:
+    player_manager = FakePlayerManager()
+    refreshed: list[int] = []
+    channel = FakeVoiceChannel(456)
+    bot = object.__new__(LofiDiscordBot)
+    bot.player_manager = player_manager
+
+    async def refresh_panel(guild_id: int) -> None:
+        refreshed.append(guild_id)
+
+    bot._refresh_panel_message = refresh_panel
+    interaction = FakeInteraction(
+        guild_id=123,
+        administrator=True,
+        user=FakeCommandMember(channel),
+        voice_client=FakeBotVoiceClient(channel),
+    )
+    monkeypatch.setattr(bot_module.discord, "Member", FakeCommandMember)
+
+    await LofiDiscordBot._vc_command(bot, interaction)
+
+    assert player_manager.leave_calls == [(123, True, True)]
+    assert player_manager.connected == []
+    assert player_manager.started == []
+    assert refreshed == [123]
+    assert interaction.response.messages == [("VCから退出しました。", True)]
+
+
+async def test_vc_command_disconnects_voice_client_without_player(monkeypatch) -> None:
+    player_manager = FakePlayerManager()
+    player_manager.left = False
+    refreshed: list[int] = []
+    channel = FakeVoiceChannel(456)
+    voice_client = FakeBotVoiceClient(channel)
+    bot = object.__new__(LofiDiscordBot)
+    bot.player_manager = player_manager
+
+    async def refresh_panel(guild_id: int) -> None:
+        refreshed.append(guild_id)
+
+    bot._refresh_panel_message = refresh_panel
+    interaction = FakeInteraction(
+        guild_id=123,
+        administrator=True,
+        user=FakeCommandMember(channel),
+        voice_client=voice_client,
+    )
+    monkeypatch.setattr(bot_module.discord, "Member", FakeCommandMember)
+
+    await LofiDiscordBot._vc_command(bot, interaction)
+
+    assert player_manager.leave_calls == [(123, True, True)]
+    assert voice_client.disconnect_calls == [True]
+    assert refreshed == [123]
+    assert interaction.response.messages == [("VCから退出しました。", True)]
+
+
+async def test_vc_command_rejects_non_admin(monkeypatch) -> None:
+    player_manager = FakePlayerManager()
+    bot = object.__new__(LofiDiscordBot)
+    bot.player_manager = player_manager
+    channel = FakeVoiceChannel(456)
+    interaction = FakeInteraction(
+        guild_id=123,
+        administrator=False,
+        user=FakeCommandMember(channel),
+    )
+    monkeypatch.setattr(bot_module.discord, "Member", FakeCommandMember)
+
+    await LofiDiscordBot._vc_command(bot, interaction)
+
+    assert player_manager.connected == []
+    assert player_manager.leave_calls == []
+    assert interaction.response.messages == [
+        ("VC接続できるのは管理者だけです。", True),
+    ]
 
 
 async def test_volume_command_rejects_non_admin() -> None:
