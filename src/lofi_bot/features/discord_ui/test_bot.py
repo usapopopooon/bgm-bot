@@ -292,7 +292,7 @@ async def test_voice_state_update_checks_leave_when_member_leaves_bot_channel() 
     assert player_manager.leave_if_alone_calls == [guild.id]
 
 
-async def test_voice_state_update_treats_self_disconnect_like_manual_leave() -> None:
+async def test_voice_state_update_treats_self_disconnect_like_manual_leave(monkeypatch) -> None:
     bot_user_id = 999
     bot_channel = FakeVoiceChannel(456)
     guild = FakeGuild(123, voice_client=None)
@@ -306,6 +306,8 @@ async def test_voice_state_update_treats_self_disconnect_like_manual_leave() -> 
         refreshed.append(guild_id)
 
     bot._refresh_panel_message = refresh_panel
+    monkeypatch.setattr(bot_module, "SELF_VOICE_RECOVERY_INITIAL_DELAY_SECONDS", 0)
+    monkeypatch.setattr(bot_module, "SELF_VOICE_RECOVERY_TIMEOUT_SECONDS", 0)
 
     await LofiDiscordBot.on_voice_state_update(
         bot,
@@ -313,13 +315,18 @@ async def test_voice_state_update_treats_self_disconnect_like_manual_leave() -> 
         FakeVoiceState(bot_channel),
         FakeVoiceState(None),
     )
+    recovery_tasks = list(bot._self_voice_recovery_tasks.values())
+    assert len(recovery_tasks) == 1
+    await recovery_tasks[0]
 
     assert player_manager.external_disconnect_calls == [guild.id]
     assert player_manager.leave_if_alone_calls == []
     assert refreshed == [guild.id]
 
 
-async def test_voice_state_update_ignores_self_disconnect_after_leave_already_handled() -> None:
+async def test_voice_state_update_ignores_self_disconnect_after_leave_already_handled(
+    monkeypatch,
+) -> None:
     bot_user_id = 999
     bot_channel = FakeVoiceChannel(456)
     guild = FakeGuild(123, voice_client=None)
@@ -334,6 +341,8 @@ async def test_voice_state_update_ignores_self_disconnect_after_leave_already_ha
         refreshed.append(guild_id)
 
     bot._refresh_panel_message = refresh_panel
+    monkeypatch.setattr(bot_module, "SELF_VOICE_RECOVERY_INITIAL_DELAY_SECONDS", 0)
+    monkeypatch.setattr(bot_module, "SELF_VOICE_RECOVERY_TIMEOUT_SECONDS", 0)
 
     await LofiDiscordBot.on_voice_state_update(
         bot,
@@ -341,9 +350,84 @@ async def test_voice_state_update_ignores_self_disconnect_after_leave_already_ha
         FakeVoiceState(bot_channel),
         FakeVoiceState(None),
     )
+    recovery_tasks = list(bot._self_voice_recovery_tasks.values())
+    assert len(recovery_tasks) == 1
+    await recovery_tasks[0]
 
     assert player_manager.external_disconnect_calls == [guild.id]
     assert refreshed == []
+
+
+async def test_voice_state_update_recovers_self_disconnect_after_voice_reconnect(
+    monkeypatch,
+) -> None:
+    bot_user_id = 999
+    bot_channel = FakeVoiceChannel(456)
+    guild = FakeGuild(123, voice_client=FakeBotVoiceClient(bot_channel))
+    player_manager = FakePlayerManager()
+    refreshed: list[int] = []
+    bot = object.__new__(LofiDiscordBot)
+    bot.player_manager = player_manager
+    bot._connection = SimpleNamespace(user=SimpleNamespace(id=bot_user_id))
+
+    async def refresh_panel(guild_id: int) -> None:
+        refreshed.append(guild_id)
+
+    bot._refresh_panel_message = refresh_panel
+    monkeypatch.setattr(bot_module, "SELF_VOICE_RECOVERY_INITIAL_DELAY_SECONDS", 0)
+    monkeypatch.setattr(bot_module, "SELF_VOICE_RECOVERY_TIMEOUT_SECONDS", 0)
+
+    await LofiDiscordBot.on_voice_state_update(
+        bot,
+        FakeVoiceMember(guild, bot=True, member_id=bot_user_id),
+        FakeVoiceState(bot_channel),
+        FakeVoiceState(None),
+    )
+    recovery_tasks = list(bot._self_voice_recovery_tasks.values())
+    assert len(recovery_tasks) == 1
+    await recovery_tasks[0]
+
+    assert player_manager.external_disconnect_calls == []
+    assert player_manager.connected == [(guild.id, bot_channel.id)]
+    assert player_manager.started == [guild.id]
+    assert refreshed == [guild.id]
+
+
+async def test_voice_state_update_waits_for_in_progress_voice_reconnect(
+    monkeypatch,
+) -> None:
+    bot_user_id = 999
+    bot_channel = FakeVoiceChannel(456)
+    voice_client = FakeBotVoiceClient(bot_channel, connected=False)
+    guild = FakeGuild(123, voice_client=voice_client)
+    player_manager = FakePlayerManager()
+    bot = object.__new__(LofiDiscordBot)
+    bot.player_manager = player_manager
+    bot._connection = SimpleNamespace(user=SimpleNamespace(id=bot_user_id))
+    bot._refresh_panel_message = _noop_refresh_panel
+    monkeypatch.setattr(bot_module, "SELF_VOICE_RECOVERY_INITIAL_DELAY_SECONDS", 0)
+    monkeypatch.setattr(bot_module, "SELF_VOICE_RECOVERY_TIMEOUT_SECONDS", 0.1)
+    monkeypatch.setattr(bot_module, "SELF_VOICE_RECOVERY_POLL_SECONDS", 0.01)
+
+    async def finish_reconnect() -> None:
+        await bot_module.asyncio.sleep(0.02)
+        voice_client.connected = True
+
+    reconnect_task = bot_module.asyncio.create_task(finish_reconnect())
+    await LofiDiscordBot.on_voice_state_update(
+        bot,
+        FakeVoiceMember(guild, bot=True, member_id=bot_user_id),
+        FakeVoiceState(bot_channel),
+        FakeVoiceState(None),
+    )
+    recovery_tasks = list(bot._self_voice_recovery_tasks.values())
+    assert len(recovery_tasks) == 1
+    await recovery_tasks[0]
+    await reconnect_task
+
+    assert player_manager.external_disconnect_calls == []
+    assert player_manager.connected == [(guild.id, bot_channel.id)]
+    assert player_manager.started == [guild.id]
 
 
 def test_admin_commands_default_to_admin_permission() -> None:

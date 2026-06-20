@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 
 import discord
@@ -14,6 +15,9 @@ from lofi_bot.features.guild_settings.repository import GuildSettingsRepository
 from lofi_bot.features.playback.manager import PlayerManager
 
 LOGGER = logging.getLogger(__name__)
+SELF_VOICE_RECOVERY_INITIAL_DELAY_SECONDS = 2.0
+SELF_VOICE_RECOVERY_TIMEOUT_SECONDS = 30.0
+SELF_VOICE_RECOVERY_POLL_SECONDS = 1.0
 
 
 class LofiDiscordBot(commands.Bot):
@@ -33,6 +37,7 @@ class LofiDiscordBot(commands.Bot):
         self.scheduler = scheduler
         self.player_manager.set_track_changed_callback(self._refresh_panel_message)
         self._restored_stay_connected = False
+        self._self_voice_recovery_tasks: dict[int, asyncio.Task[None]] = {}
 
     async def setup_hook(self) -> None:
         self.add_view(self._build_control_view())
@@ -118,12 +123,78 @@ class LofiDiscordBot(commands.Bot):
         if before.channel is None or after.channel is not None:
             return
 
-        disconnected = await self.player_manager.handle_external_disconnect(guild.id)
+        recovery_tasks = self._get_self_voice_recovery_tasks()
+        recovery_task = recovery_tasks.get(guild.id)
+        if recovery_task is not None and not recovery_task.done():
+            return
+
+        recovery_tasks[guild.id] = asyncio.create_task(
+            self._resolve_self_voice_disconnect(guild, before.channel),
+        )
+
+    def _get_self_voice_recovery_tasks(self) -> dict[int, asyncio.Task[None]]:
+        recovery_tasks = getattr(self, "_self_voice_recovery_tasks", None)
+        if recovery_tasks is None:
+            recovery_tasks = {}
+            self._self_voice_recovery_tasks = recovery_tasks
+        return recovery_tasks
+
+    async def _resolve_self_voice_disconnect(
+        self,
+        guild: discord.Guild,
+        previous_channel: object,
+    ) -> None:
+        try:
+            voice_client = await self._wait_for_recovered_voice_client(guild)
+            if voice_client is not None:
+                channel = getattr(voice_client, "channel", None) or previous_channel
+                await self.player_manager.connect(guild, channel)
+                await self.player_manager.start_saved_category(guild)
+                LOGGER.info(
+                    "Recovered voice connection after transient disconnect guild=%s",
+                    guild.id,
+                )
+                await self._refresh_panel_message(guild.id)
+                return
+
+            await self._handle_confirmed_self_voice_disconnect(guild.id)
+        except Exception:
+            LOGGER.exception("Failed to resolve self voice disconnect guild=%s", guild.id)
+        finally:
+            recovery_tasks = self._get_self_voice_recovery_tasks()
+            if recovery_tasks.get(guild.id) is asyncio.current_task():
+                recovery_tasks.pop(guild.id, None)
+
+    async def _wait_for_recovered_voice_client(
+        self,
+        guild: discord.Guild,
+    ) -> discord.VoiceClient | None:
+        timeout = max(0.0, SELF_VOICE_RECOVERY_TIMEOUT_SECONDS)
+        initial_delay = min(SELF_VOICE_RECOVERY_INITIAL_DELAY_SECONDS, timeout)
+        deadline = asyncio.get_running_loop().time() + timeout
+
+        if initial_delay > 0:
+            await asyncio.sleep(initial_delay)
+
+        while True:
+            voice_client = guild.voice_client
+            if voice_client is None:
+                return None
+            if voice_client.is_connected():
+                return voice_client
+
+            remaining = deadline - asyncio.get_running_loop().time()
+            if remaining <= 0:
+                return None
+            await asyncio.sleep(min(SELF_VOICE_RECOVERY_POLL_SECONDS, remaining))
+
+    async def _handle_confirmed_self_voice_disconnect(self, guild_id: int) -> None:
+        disconnected = await self.player_manager.handle_external_disconnect(guild_id)
         if not disconnected:
             return
 
-        LOGGER.info("Bot was disconnected manually guild=%s", guild.id)
-        await self._refresh_panel_message(guild.id)
+        LOGGER.info("Bot was disconnected manually guild=%s", guild_id)
+        await self._refresh_panel_message(guild_id)
 
     async def _sync_commands(self) -> None:
         if self.settings.discord_guild_id is not None:
