@@ -2,6 +2,7 @@ services:
   bot:
     build: .
     restart: unless-stopped
+    stop_grace_period: 30s
     mem_limit: 256m
     memswap_limit: 256m
     cpus: "0.50"
