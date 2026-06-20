@@ -12,6 +12,10 @@ class FakeBot:
     def __init__(self) -> None:
         self.closed = asyncio.Event()
         self.close_calls = 0
+        self.shutdown_started = False
+
+    def begin_shutdown(self) -> None:
+        self.shutdown_started = True
 
     async def close(self) -> None:
         self.close_calls += 1
@@ -102,4 +106,5 @@ async def test_shutdown_runtime_attempts_all_steps_when_one_fails() -> None:
 
     await app._shutdown_runtime(FakeScheduler(), FakePlayerManager(), bot, bot_task)
 
+    assert bot.shutdown_started is True
     assert calls == ["scheduler", "players", "bot"]

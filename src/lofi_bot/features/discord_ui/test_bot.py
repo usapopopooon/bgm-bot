@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from contextlib import suppress
 from types import SimpleNamespace
 
 from lofi_bot.features.discord_ui import bot as bot_module
@@ -374,6 +375,56 @@ async def test_voice_state_update_treats_self_disconnect_like_manual_leave(monke
     assert player_manager.external_disconnect_calls == [guild.id]
     assert player_manager.leave_if_alone_calls == []
     assert refreshed == [guild.id]
+
+
+async def test_voice_state_update_ignores_self_disconnect_during_shutdown(monkeypatch) -> None:
+    bot_user_id = 999
+    bot_channel = FakeVoiceChannel(456)
+    guild = FakeGuild(123, voice_client=None)
+    player_manager = FakePlayerManager()
+    refreshed: list[int] = []
+    bot = object.__new__(LofiDiscordBot)
+    bot.player_manager = player_manager
+    bot._connection = SimpleNamespace(user=SimpleNamespace(id=bot_user_id))
+    bot._shutting_down = True
+
+    async def refresh_panel(guild_id: int) -> None:
+        refreshed.append(guild_id)
+
+    bot._refresh_panel_message = refresh_panel
+    monkeypatch.setattr(bot_module, "SELF_VOICE_RECOVERY_INITIAL_DELAY_SECONDS", 0)
+    monkeypatch.setattr(bot_module, "SELF_VOICE_RECOVERY_TIMEOUT_SECONDS", 0)
+
+    await LofiDiscordBot.on_voice_state_update(
+        bot,
+        FakeVoiceMember(guild, bot=True, member_id=bot_user_id),
+        FakeVoiceState(bot_channel),
+        FakeVoiceState(None),
+    )
+
+    assert getattr(bot, "_self_voice_recovery_tasks", {}) == {}
+    assert player_manager.external_disconnect_calls == []
+    assert player_manager.connected == []
+    assert player_manager.started == []
+    assert refreshed == []
+
+
+async def test_begin_shutdown_cancels_pending_self_voice_recovery() -> None:
+    bot = object.__new__(LofiDiscordBot)
+
+    async def recover() -> None:
+        await bot_module.asyncio.Event().wait()
+
+    recovery_task = bot_module.asyncio.create_task(recover())
+    await bot_module.asyncio.sleep(0)
+    bot._self_voice_recovery_tasks = {123: recovery_task}
+
+    LofiDiscordBot.begin_shutdown(bot)
+    with suppress(bot_module.asyncio.CancelledError):
+        await recovery_task
+
+    assert bot._shutting_down is True
+    assert recovery_task.cancelled()
 
 
 async def test_voice_state_update_ignores_self_disconnect_after_leave_already_handled(

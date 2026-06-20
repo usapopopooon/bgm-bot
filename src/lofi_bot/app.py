@@ -175,6 +175,7 @@ async def _shutdown_runtime(
     bot: LofiDiscordBot,
     bot_task: asyncio.Task[None],
 ) -> None:
+    bot.begin_shutdown()
     await _run_shutdown_step("stop catalog scheduler", scheduler.stop)
     await _run_shutdown_step("disconnect voice clients", player_manager.close_all)
     await _run_shutdown_step("close Discord bot", lambda: _close_discord_bot(bot, bot_task))

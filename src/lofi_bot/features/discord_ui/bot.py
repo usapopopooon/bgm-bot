@@ -37,6 +37,7 @@ class LofiDiscordBot(commands.Bot):
         self.scheduler = scheduler
         self.player_manager.set_track_changed_callback(self._refresh_panel_message)
         self._restored_stay_connected = False
+        self._shutting_down = False
         self._self_voice_recovery_tasks: dict[int, asyncio.Task[None]] = {}
 
     async def setup_hook(self) -> None:
@@ -102,6 +103,11 @@ class LofiDiscordBot(commands.Bot):
         if left:
             LOGGER.info("Left empty voice channel guild=%s", member.guild.id)
 
+    def begin_shutdown(self) -> None:
+        self._shutting_down = True
+        for recovery_task in self._get_self_voice_recovery_tasks().values():
+            recovery_task.cancel()
+
     def _is_self_voice_member(self, member: discord.Member) -> bool:
         bot_user = getattr(getattr(self, "_connection", None), "user", None)
         bot_user_id = getattr(bot_user, "id", None)
@@ -114,6 +120,9 @@ class LofiDiscordBot(commands.Bot):
         after: discord.VoiceState,
     ) -> None:
         if before.channel is None or after.channel is not None:
+            return
+        if getattr(self, "_shutting_down", False):
+            LOGGER.info("Ignoring self voice disconnect during shutdown guild=%s", guild.id)
             return
 
         recovery_tasks = self._get_self_voice_recovery_tasks()
@@ -138,7 +147,11 @@ class LofiDiscordBot(commands.Bot):
         previous_channel: object,
     ) -> None:
         try:
+            if getattr(self, "_shutting_down", False):
+                return
             voice_client = await self._wait_for_recovered_voice_client(guild)
+            if getattr(self, "_shutting_down", False):
+                return
             if voice_client is not None:
                 channel = getattr(voice_client, "channel", None) or previous_channel
                 await self.player_manager.connect(guild, channel)
@@ -182,6 +195,9 @@ class LofiDiscordBot(commands.Bot):
             await asyncio.sleep(min(SELF_VOICE_RECOVERY_POLL_SECONDS, remaining))
 
     async def _handle_confirmed_self_voice_disconnect(self, guild_id: int) -> None:
+        if getattr(self, "_shutting_down", False):
+            return
+
         disconnected = await self.player_manager.handle_external_disconnect(guild_id)
         if not disconnected:
             return
@@ -202,6 +218,7 @@ class LofiDiscordBot(commands.Bot):
     async def _restore_stay_connected_voice(self) -> None:
         settings_list = await self.guild_settings.list_stay_connected()
         if not settings_list:
+            LOGGER.info("No stay-connected voice sessions to restore")
             return
 
         LOGGER.info("Restoring stay-connected voice sessions count=%s", len(settings_list))
