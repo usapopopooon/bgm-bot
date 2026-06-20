@@ -104,5 +104,8 @@ class Database:
 
                 CREATE INDEX IF NOT EXISTS idx_play_history_guild_played
                     ON play_history (guild_id, played_at DESC);
+
+                CREATE INDEX IF NOT EXISTS idx_play_history_guild_category_track_played
+                    ON play_history (guild_id, ranking_category, track_id, played_at DESC);
                 """
             )

@@ -56,18 +56,29 @@ class FakeTrackRepository:
     def __init__(self, tracks: list[Track]) -> None:
         self.tracks = tracks
         self.index = 0
+        self.random_results: list[Track | None] | None = None
+        self.any_track: Track | None = None
         self.recorded: list[int] = []
         self.failed: list[int] = []
+        self.reset_calls: list[tuple[int, str]] = []
 
     async def get_random_track(self, guild_id: int, category_slug: str) -> Track | None:
+        if self.random_results is not None:
+            return self.random_results.pop(0)
         if self.index >= len(self.tracks):
             return None
         track = self.tracks[self.index]
         self.index += 1
         return track
 
+    async def get_any_random_track(self, category_slug: str) -> Track | None:
+        return self.any_track
+
     async def record_play(self, guild_id: int, track_id: int, category_slug: str) -> None:
         self.recorded.append(track_id)
+
+    async def reset_play_history(self, guild_id: int, category_slug: str) -> None:
+        self.reset_calls.append((guild_id, category_slug))
 
     async def mark_failed(self, track_id: int) -> None:
         self.failed.append(track_id)
@@ -198,6 +209,56 @@ async def test_play_next_does_not_leave_stale_current_track_after_play_failures(
     assert player.current_track is None
     assert repository.recorded == [1, 2, 3, 4, 5]
     assert repository.failed == [1, 2, 3, 4, 5]
+
+
+async def test_play_next_refreshes_catalog_when_cycle_is_exhausted() -> None:
+    refreshes: list[str] = []
+    repository = FakeTrackRepository([])
+    repository.random_results = [None, make_track(1)]
+
+    async def refresh_catalog(category_slug: str) -> bool:
+        refreshes.append(category_slug)
+        return True
+
+    player = GuildPlayer(
+        guild_id=123,
+        voice_client=FakeVoiceClient(),
+        tracks=repository,
+        guild_settings=None,
+        category_slug="chill",
+        volume=0.01,
+        refresh_catalog=refresh_catalog,
+    )
+    player._create_source = lambda track: object()
+
+    await player.play_next()
+
+    assert refreshes == ["chill"]
+    assert player.current_track is not None
+    assert player.current_track.id == 1
+    assert repository.reset_calls == []
+    assert repository.recorded == [1]
+
+
+async def test_play_next_resets_cycle_when_refresh_returns_no_tracks() -> None:
+    repository = FakeTrackRepository([])
+    repository.random_results = [None, make_track(2)]
+    player = GuildPlayer(
+        guild_id=123,
+        voice_client=FakeVoiceClient(),
+        tracks=repository,
+        guild_settings=None,
+        category_slug="chill",
+        volume=0.01,
+    )
+    player._create_source = lambda track: object()
+
+    await player.play_next()
+
+    assert repository.reset_calls == [(123, "chill")]
+    assert player.current_track is not None
+    assert player.current_track.id == 2
+    assert repository.recorded == [2]
 
 
 async def test_track_change_notifications_are_coalesced() -> None:

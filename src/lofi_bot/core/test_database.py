@@ -97,3 +97,4 @@ async def test_migrate_sets_default_volume_to_one_percent() -> None:
     assert "ADD COLUMN IF NOT EXISTS stay_connected" in statement
     assert "selected_category TEXT NOT NULL DEFAULT 'chill'" in statement
     assert "SET selected_category = 'chill'" in statement
+    assert "idx_play_history_guild_category_track_played" in statement

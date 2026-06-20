@@ -12,6 +12,7 @@ from lofi_bot.features.guild_settings.repository import GuildSettingsRepository
 
 LOGGER = logging.getLogger(__name__)
 TrackChangedCallback = Callable[[int], Awaitable[None]]
+CatalogRefreshCallback = Callable[[str], Awaitable[bool]]
 
 
 def clamp_volume(volume: float) -> float:
@@ -28,6 +29,7 @@ class GuildPlayer:
         category_slug: str,
         volume: float,
         on_track_changed: TrackChangedCallback | None = None,
+        refresh_catalog: CatalogRefreshCallback | None = None,
     ) -> None:
         self.guild_id = guild_id
         self.voice_client = voice_client
@@ -36,6 +38,7 @@ class GuildPlayer:
         self._category_slug = category_slug
         self._volume = clamp_volume(volume)
         self._on_track_changed = on_track_changed
+        self._refresh_catalog = refresh_catalog
         self._lock = asyncio.Lock()
         self._stopped = False
         self._retry_task: asyncio.Task[None] | None = None
@@ -117,7 +120,7 @@ class GuildPlayer:
         had_track = self.current_track is not None
         self.current_track = None
         for _ in range(5):
-            track = await self._tracks.get_random_track(self.guild_id, self._category_slug)
+            track = await self._get_next_track()
             if track is None or track.id is None:
                 LOGGER.warning(
                     "No playable tracks for guild=%s category=%s",
@@ -148,6 +151,41 @@ class GuildPlayer:
                 await self._tracks.mark_failed(track.id)
         if had_track:
             self._notify_track_changed()
+
+    async def _get_next_track(self) -> Track | None:
+        track = await self._tracks.get_random_track(self.guild_id, self._category_slug)
+        if track is not None:
+            return track
+
+        LOGGER.info(
+            "Playback cycle exhausted guild=%s category=%s; refreshing catalog",
+            self.guild_id,
+            self._category_slug,
+        )
+        refreshed = await self._refresh_exhausted_catalog()
+        if refreshed:
+            track = await self._tracks.get_random_track(self.guild_id, self._category_slug)
+            if track is not None:
+                return track
+
+        await self._tracks.reset_play_history(self.guild_id, self._category_slug)
+        track = await self._tracks.get_random_track(self.guild_id, self._category_slug)
+        if track is not None:
+            return track
+        return await self._tracks.get_any_random_track(self._category_slug)
+
+    async def _refresh_exhausted_catalog(self) -> bool:
+        if self._refresh_catalog is None:
+            return False
+        try:
+            return await self._refresh_catalog(self._category_slug)
+        except Exception:
+            LOGGER.exception(
+                "Failed to refresh exhausted catalog guild=%s category=%s",
+                self.guild_id,
+                self._category_slug,
+            )
+            return False
 
     def _create_source(self, track: Track) -> discord.AudioSource:
         before_options = "-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5"

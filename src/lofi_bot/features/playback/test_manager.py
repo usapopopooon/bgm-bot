@@ -45,6 +45,15 @@ class FakeSettingsRepository:
         self.cleared_voice_channels.append(guild_id)
 
 
+class FakeCatalogService:
+    def __init__(self) -> None:
+        self.refreshed_categories: list[str] = []
+
+    async def refresh_category(self, category_slug: str) -> bool:
+        self.refreshed_categories.append(category_slug)
+        return True
+
+
 class FakePlayer:
     def __init__(self, is_active: bool) -> None:
         self.is_active = is_active
@@ -134,6 +143,25 @@ async def test_connect_self_deafens_new_voice_connection() -> None:
         }
     ]
     assert settings.voice_channel_updates == [(123, 456)]
+
+
+async def test_connect_wires_catalog_refresh_callback_to_player() -> None:
+    settings = FakeSettingsRepository()
+    catalog_service = FakeCatalogService()
+    manager = PlayerManager(
+        tracks=None,
+        guild_settings=settings,
+        default_category="chill",
+        catalog_service=catalog_service,
+    )
+    guild = FakeConnectGuild()
+    channel = FakeConnectVoiceChannel(456)
+
+    player = await manager.connect(guild, channel)
+    refreshed = await player._refresh_catalog("chill")
+
+    assert refreshed is True
+    assert catalog_service.refreshed_categories == ["chill"]
 
 
 async def test_connect_reapplies_speaker_mute_for_existing_voice_connection() -> None:

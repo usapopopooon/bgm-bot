@@ -37,6 +37,7 @@ async def run() -> None:
             tracks=catalog_repository,
             guild_settings=guild_settings_repository,
             default_category=settings.default_category,
+            catalog_service=catalog_service,
         )
         bot = LofiDiscordBot(
             settings=settings,

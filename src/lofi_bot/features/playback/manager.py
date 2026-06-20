@@ -8,6 +8,7 @@ import discord
 from lofi_bot.features.catalog.categories import get_category
 from lofi_bot.features.catalog.models import Track
 from lofi_bot.features.catalog.repository import CatalogRepository
+from lofi_bot.features.catalog.service import CatalogService
 from lofi_bot.features.guild_settings.repository import GuildSettingsRepository
 from lofi_bot.features.playback.player import GuildPlayer, clamp_volume
 
@@ -22,10 +23,12 @@ class PlayerManager:
         tracks: CatalogRepository,
         guild_settings: GuildSettingsRepository,
         default_category: str,
+        catalog_service: CatalogService | None = None,
     ) -> None:
         self._tracks = tracks
         self._guild_settings = guild_settings
         self._default_category = default_category
+        self._catalog_service = catalog_service
         self._players: dict[int, GuildPlayer] = {}
         self._track_changed_callback: TrackChangedCallback | None = None
 
@@ -61,6 +64,7 @@ class PlayerManager:
                 category_slug=settings.selected_category,
                 volume=settings.volume,
                 on_track_changed=self._track_changed_callback,
+                refresh_catalog=self._refresh_catalog_category,
             )
             self._players[guild.id] = player
         else:
@@ -69,6 +73,11 @@ class PlayerManager:
             player.set_track_changed_callback(self._track_changed_callback)
 
         return player
+
+    async def _refresh_catalog_category(self, category_slug: str) -> bool:
+        if self._catalog_service is None:
+            return False
+        return await self._catalog_service.refresh_category(category_slug)
 
     async def _ensure_speaker_muted(
         self,

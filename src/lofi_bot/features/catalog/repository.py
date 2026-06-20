@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
-
 import asyncpg
 
 from lofi_bot.features.catalog.categories import CATEGORIES
@@ -16,8 +14,8 @@ class CatalogRepository:
         if not tracks:
             return 0
 
-        fetched_at = datetime.now(UTC)
         async with self._pool.acquire() as connection, connection.transaction():
+            fetched_at = await connection.fetchval("SELECT now()")
             for track in tracks:
                 await connection.execute(
                     """
@@ -111,43 +109,43 @@ class CatalogRepository:
         self,
         guild_id: int,
         category_slug: str,
-        exclude_recent_count: int = 10,
     ) -> Track | None:
         row = await self._pool.fetchrow(
             """
-            WITH recent AS (
-                SELECT track_id
-                FROM play_history
-                WHERE guild_id = $1
-                ORDER BY played_at DESC
-                LIMIT $3
-            )
-            SELECT *
+            SELECT tracks.*
             FROM tracks
-            WHERE ranking_category = $2
-              AND enabled = TRUE
-              AND instrumental_only = TRUE
-              AND id NOT IN (SELECT track_id FROM recent)
+            WHERE tracks.ranking_category = $2
+              AND tracks.enabled = TRUE
+              AND tracks.instrumental_only = TRUE
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM play_history
+                  WHERE play_history.guild_id = $1
+                    AND play_history.ranking_category = $2
+                    AND play_history.track_id = tracks.id
+                    AND play_history.played_at >= tracks.fetched_at
+              )
             ORDER BY random()
             LIMIT 1
             """,
             guild_id,
             category_slug,
-            exclude_recent_count,
         )
-        if row is None:
-            row = await self._pool.fetchrow(
-                """
-                SELECT *
-                FROM tracks
-                WHERE ranking_category = $1
-                  AND enabled = TRUE
-                  AND instrumental_only = TRUE
-                ORDER BY random()
-                LIMIT 1
-                """,
-                category_slug,
-            )
+        return self._row_to_track(row) if row is not None else None
+
+    async def get_any_random_track(self, category_slug: str) -> Track | None:
+        row = await self._pool.fetchrow(
+            """
+            SELECT *
+            FROM tracks
+            WHERE ranking_category = $1
+              AND enabled = TRUE
+              AND instrumental_only = TRUE
+            ORDER BY random()
+            LIMIT 1
+            """,
+            category_slug,
+        )
         return self._row_to_track(row) if row is not None else None
 
     async def record_play(self, guild_id: int, track_id: int, category_slug: str) -> None:
@@ -158,6 +156,17 @@ class CatalogRepository:
             """,
             guild_id,
             track_id,
+            category_slug,
+        )
+
+    async def reset_play_history(self, guild_id: int, category_slug: str) -> None:
+        await self._pool.execute(
+            """
+            DELETE FROM play_history
+            WHERE guild_id = $1
+              AND ranking_category = $2
+            """,
+            guild_id,
             category_slug,
         )
 
