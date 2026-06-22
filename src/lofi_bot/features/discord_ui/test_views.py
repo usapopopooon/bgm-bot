@@ -85,7 +85,7 @@ async def test_panel_embed_includes_current_track_without_progress_bar() -> None
     assert "Progress" not in fields
 
 
-def test_player_control_view_includes_pause_and_next_buttons() -> None:
+async def test_player_control_view_includes_pause_and_next_buttons() -> None:
     view = PlayerControlView(
         guild_settings=FakeGuildSettingsRepository(),
         player_manager=FakePlayerManager(),
@@ -101,7 +101,7 @@ def test_player_control_view_includes_pause_and_next_buttons() -> None:
     ]
 
 
-def test_player_control_view_shows_resume_when_paused() -> None:
+async def test_player_control_view_shows_resume_when_paused() -> None:
     view = PlayerControlView(
         guild_settings=FakeGuildSettingsRepository(),
         player_manager=FakePlayerManager(is_paused=True),

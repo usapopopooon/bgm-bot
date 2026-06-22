@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
+from datetime import UTC, datetime
+from enum import Enum
 
 import discord
 from discord import app_commands
@@ -18,6 +21,61 @@ LOGGER = logging.getLogger(__name__)
 SELF_VOICE_RECOVERY_INITIAL_DELAY_SECONDS = 2.0
 SELF_VOICE_RECOVERY_TIMEOUT_SECONDS = 30.0
 SELF_VOICE_RECOVERY_POLL_SECONDS = 1.0
+READY_VOICE_RESTORE_DELAY_SECONDS = 35.0
+STAY_CONNECTED_RECONNECT_ATTEMPTS = 8
+STAY_CONNECTED_RECONNECT_BASE_DELAY_SECONDS = 5.0
+STAY_CONNECTED_RECONNECT_MAX_DELAY_SECONDS = 300.0
+GATEWAY_SERVER_ERROR_MIN_STATUS = 500
+GATEWAY_SERVER_ERROR_MAX_STATUS = 599
+GATEWAY_RECOVERABLE_DISCONNECT_RESTORE_WINDOW_SECONDS = 180.0
+GATEWAY_SESSION_INVALIDATED_MESSAGE = "session has been invalidated"
+USER_REQUESTED_DISCONNECT_WINDOW_SECONDS = 60.0
+MANUAL_VOICE_DISCONNECT_AUDIT_WINDOW_SECONDS = 30.0
+
+
+class VoiceDisconnectMeaning(Enum):
+    USER_REQUESTED = "user_requested"
+    RECOVERABLE = "recoverable"
+
+
+def _stay_connected_reconnect_delay(failed_attempt: int) -> float:
+    exponent = max(0, failed_attempt - 1)
+    delay = STAY_CONNECTED_RECONNECT_BASE_DELAY_SECONDS * (2**exponent)
+    return min(delay, STAY_CONNECTED_RECONNECT_MAX_DELAY_SECONDS)
+
+
+def _is_recent_monotonic_timestamp(timestamp: float | None, window_seconds: float) -> bool:
+    if timestamp is None:
+        return False
+    return time.monotonic() - timestamp <= window_seconds
+
+
+class DiscordGatewayRecoverableDisconnectLogHandler(logging.Handler):
+    def __init__(self, callback) -> None:  # noqa: ANN001
+        super().__init__(level=logging.INFO)
+        self._callback = callback
+
+    def emit(self, record: logging.LogRecord) -> None:
+        if self._is_gateway_session_invalidated(record):
+            self._callback()
+            return
+
+        if record.exc_info is None:
+            return
+
+        error = record.exc_info[1]
+        status = getattr(error, "status", None)
+        if (
+            isinstance(status, int)
+            and GATEWAY_SERVER_ERROR_MIN_STATUS <= status <= GATEWAY_SERVER_ERROR_MAX_STATUS
+        ):
+            self._callback()
+
+    def _is_gateway_session_invalidated(self, record: logging.LogRecord) -> bool:
+        return (
+            record.name == "discord.gateway"
+            and GATEWAY_SESSION_INVALIDATED_MESSAGE in record.getMessage()
+        )
 
 
 class LofiDiscordBot(commands.Bot):
@@ -39,6 +97,25 @@ class LofiDiscordBot(commands.Bot):
         self._restored_stay_connected = False
         self._shutting_down = False
         self._self_voice_recovery_tasks: dict[int, asyncio.Task[None]] = {}
+        self._ready_voice_restore_task: asyncio.Task[None] | None = None
+        self._last_gateway_recoverable_disconnect_at: float | None = None
+        self._last_user_requested_disconnect_at_by_guild: dict[int, float] = {}
+        self._gateway_recoverable_disconnect_log_handler = (
+            DiscordGatewayRecoverableDisconnectLogHandler(
+                self._record_gateway_recoverable_disconnect,
+            )
+        )
+        self._gateway_loggers = (
+            logging.getLogger("discord.client"),
+            logging.getLogger("discord.gateway"),
+        )
+        for logger in self._gateway_loggers:
+            logger.addHandler(self._gateway_recoverable_disconnect_log_handler)
+
+    async def close(self) -> None:
+        for logger in self._gateway_loggers:
+            logger.removeHandler(self._gateway_recoverable_disconnect_log_handler)
+        await super().close()
 
     async def setup_hook(self) -> None:
         self.add_view(self._build_control_view())
@@ -79,7 +156,9 @@ class LofiDiscordBot(commands.Bot):
         LOGGER.info("Logged in as %s", self.user)
         if not self._restored_stay_connected:
             self._restored_stay_connected = True
-            await self._restore_stay_connected_voice()
+            await self._restore_stay_connected_voice_with_retries()
+        elif self._has_recent_gateway_recoverable_disconnect():
+            self._schedule_delayed_stay_connected_restore()
 
     async def on_voice_state_update(
         self,
@@ -107,6 +186,28 @@ class LofiDiscordBot(commands.Bot):
         self._shutting_down = True
         for recovery_task in self._get_self_voice_recovery_tasks().values():
             recovery_task.cancel()
+        ready_restore_task = getattr(self, "_ready_voice_restore_task", None)
+        if ready_restore_task is not None:
+            ready_restore_task.cancel()
+
+    def _schedule_delayed_stay_connected_restore(self) -> None:
+        ready_restore_task = getattr(self, "_ready_voice_restore_task", None)
+        if ready_restore_task is not None and not ready_restore_task.done():
+            return
+        self._ready_voice_restore_task = asyncio.create_task(
+            self._restore_stay_connected_voice_after_ready_delay(),
+        )
+
+    async def _restore_stay_connected_voice_after_ready_delay(self) -> None:
+        try:
+            await asyncio.sleep(READY_VOICE_RESTORE_DELAY_SECONDS)
+            if getattr(self, "_shutting_down", False):
+                return
+            await self._restore_stay_connected_voice_with_retries()
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            LOGGER.exception("Failed to restore stay-connected voice after gateway reconnect")
 
     def _is_self_voice_member(self, member: discord.Member) -> bool:
         bot_user = getattr(getattr(self, "_connection", None), "user", None)
@@ -141,6 +242,77 @@ class LofiDiscordBot(commands.Bot):
             self._self_voice_recovery_tasks = recovery_tasks
         return recovery_tasks
 
+    def _record_gateway_recoverable_disconnect(self) -> None:
+        self._last_gateway_recoverable_disconnect_at = time.monotonic()
+
+    def _record_user_requested_disconnect(self, guild_id: int) -> None:
+        disconnects_by_guild = getattr(self, "_last_user_requested_disconnect_at_by_guild", None)
+        if disconnects_by_guild is None:
+            disconnects_by_guild = {}
+            self._last_user_requested_disconnect_at_by_guild = disconnects_by_guild
+        disconnects_by_guild[guild_id] = time.monotonic()
+
+    def _has_recent_user_requested_disconnect(self, guild_id: int) -> bool:
+        disconnects_by_guild = getattr(self, "_last_user_requested_disconnect_at_by_guild", {})
+        return _is_recent_monotonic_timestamp(
+            disconnects_by_guild.get(guild_id),
+            USER_REQUESTED_DISCONNECT_WINDOW_SECONDS,
+        )
+
+    def _has_recent_gateway_recoverable_disconnect(self) -> bool:
+        return _is_recent_monotonic_timestamp(
+            getattr(self, "_last_gateway_recoverable_disconnect_at", None),
+            GATEWAY_RECOVERABLE_DISCONNECT_RESTORE_WINDOW_SECONDS,
+        )
+
+    async def _classify_self_voice_disconnect(self, guild: discord.Guild) -> VoiceDisconnectMeaning:
+        guild_id = guild.id
+        if self._has_recent_user_requested_disconnect(guild_id):
+            return VoiceDisconnectMeaning.USER_REQUESTED
+        if await self._has_recent_manual_voice_disconnect_audit_entry(guild):
+            return VoiceDisconnectMeaning.USER_REQUESTED
+        return VoiceDisconnectMeaning.RECOVERABLE
+
+    async def _has_recent_manual_voice_disconnect_audit_entry(
+        self,
+        guild: discord.Guild,
+    ) -> bool:
+        audit_logs = getattr(guild, "audit_logs", None)
+        if audit_logs is None:
+            return False
+
+        now = datetime.now(UTC)
+        try:
+            async for entry in audit_logs(
+                limit=5,
+                action=discord.AuditLogAction.member_disconnect,
+            ):
+                created_at = getattr(entry, "created_at", None)
+                if created_at is None:
+                    continue
+                age_seconds = abs((now - created_at).total_seconds())
+                if age_seconds <= MANUAL_VOICE_DISCONNECT_AUDIT_WINDOW_SECONDS:
+                    return True
+                if age_seconds > MANUAL_VOICE_DISCONNECT_AUDIT_WINDOW_SECONDS:
+                    return False
+        except discord.Forbidden:
+            LOGGER.warning(
+                "Cannot inspect audit log for manual voice disconnect guild=%s",
+                guild.id,
+            )
+        except discord.HTTPException:
+            LOGGER.exception(
+                "Failed to inspect audit log for manual voice disconnect guild=%s",
+                guild.id,
+            )
+        except Exception:
+            LOGGER.exception(
+                "Unexpected audit log failure while classifying voice disconnect guild=%s",
+                guild.id,
+            )
+
+        return False
+
     async def _resolve_self_voice_disconnect(
         self,
         guild: discord.Guild,
@@ -161,6 +333,13 @@ class LofiDiscordBot(commands.Bot):
                     guild.id,
                 )
                 await self._refresh_panel_message(guild.id)
+                return
+
+            restored = await self._restore_stay_connected_after_voice_disconnect(
+                guild,
+                previous_channel,
+            )
+            if restored:
                 return
 
             await self._handle_confirmed_self_voice_disconnect(guild.id)
@@ -194,6 +373,110 @@ class LofiDiscordBot(commands.Bot):
                 return None
             await asyncio.sleep(min(SELF_VOICE_RECOVERY_POLL_SECONDS, remaining))
 
+    async def _restore_stay_connected_after_voice_disconnect(
+        self,
+        guild: discord.Guild,
+        previous_channel: object,
+    ) -> bool:
+        guild_settings = getattr(self, "guild_settings", None)
+        settings = getattr(self, "settings", None)
+        if guild_settings is None or settings is None:
+            return False
+        disconnect_meaning = await self._classify_self_voice_disconnect(guild)
+        if disconnect_meaning is VoiceDisconnectMeaning.USER_REQUESTED:
+            LOGGER.info(
+                "Treating self voice disconnect as user-requested guild=%s",
+                guild.id,
+            )
+            return False
+
+        for attempt in range(1, STAY_CONNECTED_RECONNECT_ATTEMPTS + 1):
+            if getattr(self, "_shutting_down", False):
+                return True
+
+            saved_settings = await guild_settings.get_or_create(guild.id, settings.default_category)
+            if not saved_settings.stay_connected:
+                return False
+
+            try:
+                channel = await self._resolve_stay_connected_channel(
+                    saved_settings.voice_channel_id,
+                    previous_channel,
+                )
+                if channel is None:
+                    LOGGER.warning(
+                        "Cannot restore stay-connected voice; channel unavailable "
+                        "guild=%s channel=%s",
+                        guild.id,
+                        saved_settings.voice_channel_id,
+                    )
+                    return True
+
+                await self.player_manager.connect(guild, channel)
+                await self.player_manager.start_saved_category(guild)
+                LOGGER.info(
+                    "Restored stay-connected voice after disconnect guild=%s channel=%s",
+                    guild.id,
+                    getattr(channel, "id", None),
+                )
+                await self._refresh_panel_message(guild.id)
+                return True
+            except (discord.NotFound, discord.Forbidden):
+                LOGGER.warning(
+                    "Cannot restore stay-connected voice; missing channel access "
+                    "guild=%s channel=%s",
+                    guild.id,
+                    saved_settings.voice_channel_id,
+                )
+                return True
+            except discord.HTTPException:
+                LOGGER.exception(
+                    "Discord request failed while restoring stay-connected voice "
+                    "guild=%s attempt=%s/%s",
+                    guild.id,
+                    attempt,
+                    STAY_CONNECTED_RECONNECT_ATTEMPTS,
+                )
+            except Exception:
+                LOGGER.exception(
+                    "Failed to restore stay-connected voice guild=%s attempt=%s/%s",
+                    guild.id,
+                    attempt,
+                    STAY_CONNECTED_RECONNECT_ATTEMPTS,
+                )
+
+            if attempt < STAY_CONNECTED_RECONNECT_ATTEMPTS:
+                delay_seconds = _stay_connected_reconnect_delay(attempt)
+                LOGGER.info(
+                    "Retrying stay-connected voice restore guild=%s in %.1fs "
+                    "attempt=%s/%s",
+                    guild.id,
+                    delay_seconds,
+                    attempt + 1,
+                    STAY_CONNECTED_RECONNECT_ATTEMPTS,
+                )
+                await asyncio.sleep(delay_seconds)
+
+        LOGGER.warning("Giving up stay-connected voice restore for now guild=%s", guild.id)
+        return True
+
+    async def _resolve_stay_connected_channel(
+        self,
+        channel_id: int | None,
+        fallback_channel: object,
+    ) -> discord.VoiceChannel | None:
+        channel = None
+        if channel_id is not None:
+            channel = self.get_channel(channel_id)
+            if channel is None:
+                channel = await self.fetch_channel(channel_id)
+
+        if not isinstance(channel, discord.VoiceChannel):
+            channel = fallback_channel
+        if not isinstance(channel, discord.VoiceChannel):
+            return None
+        return channel
+
     async def _handle_confirmed_self_voice_disconnect(self, guild_id: int) -> None:
         if getattr(self, "_shutting_down", False):
             return
@@ -215,19 +498,42 @@ class LofiDiscordBot(commands.Bot):
         await self.tree.sync()
         LOGGER.info("Synced global commands")
 
-    async def _restore_stay_connected_voice(self) -> None:
+    async def _restore_stay_connected_voice_with_retries(self) -> None:
+        for attempt in range(1, STAY_CONNECTED_RECONNECT_ATTEMPTS + 1):
+            if getattr(self, "_shutting_down", False):
+                return
+
+            restored = await self._restore_stay_connected_voice()
+            if restored:
+                return
+
+            if attempt < STAY_CONNECTED_RECONNECT_ATTEMPTS:
+                delay_seconds = _stay_connected_reconnect_delay(attempt)
+                LOGGER.info(
+                    "Retrying saved stay-connected restore in %.1fs attempt=%s/%s",
+                    delay_seconds,
+                    attempt + 1,
+                    STAY_CONNECTED_RECONNECT_ATTEMPTS,
+                )
+                await asyncio.sleep(delay_seconds)
+
+        LOGGER.warning("Giving up saved stay-connected restore for now")
+
+    async def _restore_stay_connected_voice(self) -> bool:
         settings_list = await self.guild_settings.list_stay_connected()
         if not settings_list:
             LOGGER.info("No stay-connected voice sessions to restore")
-            return
+            return True
 
         LOGGER.info("Restoring stay-connected voice sessions count=%s", len(settings_list))
+        all_restored = True
         for settings in settings_list:
             if settings.voice_channel_id is None:
                 continue
 
             guild = self.get_guild(settings.guild_id)
             if guild is None:
+                all_restored = False
                 LOGGER.warning(
                     "Cannot restore voice session; guild not found guild=%s",
                     settings.guild_id,
@@ -258,6 +564,7 @@ class LofiDiscordBot(commands.Bot):
                         settings.guild_id,
                         settings.voice_channel_id,
                     )
+                    all_restored = False
                     continue
 
             if not isinstance(channel, discord.VoiceChannel):
@@ -290,12 +597,16 @@ class LofiDiscordBot(commands.Bot):
                     settings.guild_id,
                     settings.voice_channel_id,
                 )
+                all_restored = False
             except Exception:
                 LOGGER.exception(
                     "Cannot restore voice session guild=%s channel=%s",
                     settings.guild_id,
                     settings.voice_channel_id,
                 )
+                all_restored = False
+
+        return all_restored
 
     async def _reject_non_admin(self, interaction: discord.Interaction, message: str) -> bool:
         if interaction.guild is None:
@@ -322,6 +633,7 @@ class LofiDiscordBot(commands.Bot):
 
         voice_client = interaction.guild.voice_client
         if voice_client is not None and voice_client.is_connected():
+            self._record_user_requested_disconnect(interaction.guild.id)
             left = await self.player_manager.leave(
                 interaction.guild.id,
                 clear_saved_channel=True,
@@ -426,6 +738,7 @@ class LofiDiscordBot(commands.Bot):
         await self.player_manager.set_stay_connected(interaction.guild.id, enabled)
         left = False
         if not enabled:
+            self._record_user_requested_disconnect(interaction.guild.id)
             left = await self.player_manager.leave_if_alone(interaction.guild)
 
         message = f"Stayを {'ON' if enabled else 'OFF'} にしました。"
@@ -443,6 +756,7 @@ class LofiDiscordBot(commands.Bot):
         ):
             return
 
+        self._record_user_requested_disconnect(interaction.guild.id)
         left = await self.player_manager.leave(
             interaction.guild.id,
             clear_saved_channel=True,

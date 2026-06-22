@@ -156,6 +156,7 @@ Bot Permissions:
 - `Connect`
 - `Speak`
 - `Use Voice Activity`
+- `View Audit Log`
 - `Send Messages`
 - `Embed Links`
 
