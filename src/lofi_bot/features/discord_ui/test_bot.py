@@ -106,13 +106,17 @@ class FakeGuild:
         guild_id: int,
         voice_client=None,  # noqa: ANN001
         audit_log_entries: list[object] | None = None,
+        audit_log_error: BaseException | None = None,
     ) -> None:
         self.id = guild_id
         self.voice_client = voice_client
         self.audit_log_entries = audit_log_entries or []
+        self.audit_log_error = audit_log_error
 
     def audit_logs(self, **kwargs: object):  # noqa: ANN201
         async def entries():
+            if self.audit_log_error is not None:
+                raise self.audit_log_error
             for entry in self.audit_log_entries:
                 yield entry
 
@@ -316,7 +320,7 @@ async def test_restore_stay_connected_voice_with_retries_until_success(monkeypat
     bot._shutting_down = False
     monkeypatch.setattr(bot_module, "STAY_CONNECTED_RECONNECT_BASE_DELAY_SECONDS", 0)
 
-    async def restore() -> bool:
+    async def restore(completed_guild_ids=None) -> bool:  # noqa: ANN001
         nonlocal attempts
         attempts += 1
         return attempts == 2
@@ -326,6 +330,29 @@ async def test_restore_stay_connected_voice_with_retries_until_success(monkeypat
     await LofiDiscordBot._restore_stay_connected_voice_with_retries(bot)
 
     assert attempts == 2
+
+
+async def test_restore_stay_connected_voice_with_retries_skips_completed_guilds(
+    monkeypatch,
+) -> None:
+    completed_snapshots: list[set[int]] = []
+    bot = object.__new__(LofiDiscordBot)
+    bot._shutting_down = False
+    monkeypatch.setattr(bot_module, "STAY_CONNECTED_RECONNECT_BASE_DELAY_SECONDS", 0)
+
+    async def restore(completed_guild_ids: set[int] | None = None) -> bool:
+        assert completed_guild_ids is not None
+        completed_snapshots.append(set(completed_guild_ids))
+        if not completed_guild_ids:
+            completed_guild_ids.add(123)
+            return False
+        return True
+
+    bot._restore_stay_connected_voice = restore
+
+    await LofiDiscordBot._restore_stay_connected_voice_with_retries(bot)
+
+    assert completed_snapshots == [set(), {123}]
 
 
 async def test_setup_hook_registers_commands_without_panel() -> None:
@@ -476,6 +503,7 @@ async def test_stay_connected_self_disconnect_is_manual_with_recent_audit_log(
     bot_channel = FakeVoiceChannel(456)
     recent_disconnect = SimpleNamespace(
         created_at=bot_module.datetime.now(bot_module.UTC),
+        extra=SimpleNamespace(count=1),
     )
     guild = FakeGuild(123, voice_client=None, audit_log_entries=[recent_disconnect])
     guild_settings = FakeGuildSettingsRepository(
@@ -533,6 +561,7 @@ async def test_stay_connected_self_disconnect_recovers_without_user_intent(
             bot_module.datetime.now(bot_module.UTC)
             - timedelta(seconds=bot_module.MANUAL_VOICE_DISCONNECT_AUDIT_WINDOW_SECONDS + 1)
         ),
+        extra=SimpleNamespace(count=1),
     )
     guild = FakeGuild(123, voice_client=None, audit_log_entries=[old_disconnect])
     guild_settings = FakeGuildSettingsRepository(
@@ -556,6 +585,181 @@ async def test_stay_connected_self_disconnect_recovers_without_user_intent(
     bot.settings = type("FakeSettings", (), {"default_category": "chill"})()
     bot._connection = SimpleNamespace(user=SimpleNamespace(id=bot_user_id))
     bot._last_gateway_recoverable_disconnect_at = None
+    bot.get_channel = lambda channel_id: bot_channel if channel_id == bot_channel.id else None
+
+    async def refresh_panel(guild_id: int) -> None:
+        refreshed.append(guild_id)
+
+    bot._refresh_panel_message = refresh_panel
+    monkeypatch.setattr(bot_module.discord, "VoiceChannel", FakeVoiceChannel)
+    monkeypatch.setattr(bot_module, "SELF_VOICE_RECOVERY_INITIAL_DELAY_SECONDS", 0)
+    monkeypatch.setattr(bot_module, "SELF_VOICE_RECOVERY_TIMEOUT_SECONDS", 0)
+
+    await LofiDiscordBot.on_voice_state_update(
+        bot,
+        FakeVoiceMember(guild, bot=True, member_id=bot_user_id),
+        FakeVoiceState(bot_channel),
+        FakeVoiceState(None),
+    )
+    recovery_tasks = list(bot._self_voice_recovery_tasks.values())
+    assert len(recovery_tasks) == 1
+    await recovery_tasks[0]
+
+    assert player_manager.external_disconnect_calls == []
+    assert player_manager.connected == [(guild.id, bot_channel.id)]
+    assert player_manager.started == [guild.id]
+    assert refreshed == [guild.id]
+
+
+async def test_stay_connected_self_disconnect_recovers_when_audit_log_unavailable(
+    monkeypatch,
+) -> None:
+    class FakeForbidden(Exception):
+        pass
+
+    bot_user_id = 999
+    bot_channel = FakeVoiceChannel(456)
+    guild = FakeGuild(123, voice_client=None, audit_log_error=FakeForbidden())
+    guild_settings = FakeGuildSettingsRepository(
+        [
+            GuildSettings(
+                guild_id=guild.id,
+                voice_channel_id=bot_channel.id,
+                selected_category="chill",
+                volume=0.01,
+                stay_connected=True,
+                panel_channel_id=None,
+                panel_message_id=None,
+            )
+        ]
+    )
+    player_manager = FakePlayerManager()
+    refreshed: list[int] = []
+    bot = object.__new__(LofiDiscordBot)
+    bot.guild_settings = guild_settings
+    bot.player_manager = player_manager
+    bot.settings = type("FakeSettings", (), {"default_category": "chill"})()
+    bot._connection = SimpleNamespace(user=SimpleNamespace(id=bot_user_id))
+    bot._last_gateway_recoverable_disconnect_at = None
+    bot.get_channel = lambda channel_id: bot_channel if channel_id == bot_channel.id else None
+
+    async def refresh_panel(guild_id: int) -> None:
+        refreshed.append(guild_id)
+
+    bot._refresh_panel_message = refresh_panel
+    monkeypatch.setattr(bot_module.discord, "Forbidden", FakeForbidden)
+    monkeypatch.setattr(bot_module.discord, "VoiceChannel", FakeVoiceChannel)
+    monkeypatch.setattr(bot_module, "SELF_VOICE_RECOVERY_INITIAL_DELAY_SECONDS", 0)
+    monkeypatch.setattr(bot_module, "SELF_VOICE_RECOVERY_TIMEOUT_SECONDS", 0)
+
+    await LofiDiscordBot.on_voice_state_update(
+        bot,
+        FakeVoiceMember(guild, bot=True, member_id=bot_user_id),
+        FakeVoiceState(bot_channel),
+        FakeVoiceState(None),
+    )
+    recovery_tasks = list(bot._self_voice_recovery_tasks.values())
+    assert len(recovery_tasks) == 1
+    await recovery_tasks[0]
+
+    assert player_manager.external_disconnect_calls == []
+    assert player_manager.connected == [(guild.id, bot_channel.id)]
+    assert player_manager.started == [guild.id]
+    assert refreshed == [guild.id]
+
+
+async def test_stay_connected_self_disconnect_ignores_ambiguous_audit_log(
+    monkeypatch,
+) -> None:
+    bot_user_id = 999
+    bot_channel = FakeVoiceChannel(456)
+    recent_multi_disconnect = SimpleNamespace(
+        created_at=bot_module.datetime.now(bot_module.UTC),
+        extra=SimpleNamespace(count=2),
+    )
+    guild = FakeGuild(
+        123,
+        voice_client=None,
+        audit_log_entries=[recent_multi_disconnect],
+    )
+    guild_settings = FakeGuildSettingsRepository(
+        [
+            GuildSettings(
+                guild_id=guild.id,
+                voice_channel_id=bot_channel.id,
+                selected_category="chill",
+                volume=0.01,
+                stay_connected=True,
+                panel_channel_id=None,
+                panel_message_id=None,
+            )
+        ]
+    )
+    player_manager = FakePlayerManager()
+    refreshed: list[int] = []
+    bot = object.__new__(LofiDiscordBot)
+    bot.guild_settings = guild_settings
+    bot.player_manager = player_manager
+    bot.settings = type("FakeSettings", (), {"default_category": "chill"})()
+    bot._connection = SimpleNamespace(user=SimpleNamespace(id=bot_user_id))
+    bot._last_gateway_recoverable_disconnect_at = None
+    bot.get_channel = lambda channel_id: bot_channel if channel_id == bot_channel.id else None
+
+    async def refresh_panel(guild_id: int) -> None:
+        refreshed.append(guild_id)
+
+    bot._refresh_panel_message = refresh_panel
+    monkeypatch.setattr(bot_module.discord, "VoiceChannel", FakeVoiceChannel)
+    monkeypatch.setattr(bot_module, "SELF_VOICE_RECOVERY_INITIAL_DELAY_SECONDS", 0)
+    monkeypatch.setattr(bot_module, "SELF_VOICE_RECOVERY_TIMEOUT_SECONDS", 0)
+
+    await LofiDiscordBot.on_voice_state_update(
+        bot,
+        FakeVoiceMember(guild, bot=True, member_id=bot_user_id),
+        FakeVoiceState(bot_channel),
+        FakeVoiceState(None),
+    )
+    recovery_tasks = list(bot._self_voice_recovery_tasks.values())
+    assert len(recovery_tasks) == 1
+    await recovery_tasks[0]
+
+    assert player_manager.external_disconnect_calls == []
+    assert player_manager.connected == [(guild.id, bot_channel.id)]
+    assert player_manager.started == [guild.id]
+    assert refreshed == [guild.id]
+
+
+async def test_gateway_recoverable_signal_overrides_ambiguous_audit_log(
+    monkeypatch,
+) -> None:
+    bot_user_id = 999
+    bot_channel = FakeVoiceChannel(456)
+    recent_disconnect = SimpleNamespace(
+        created_at=bot_module.datetime.now(bot_module.UTC),
+        extra=SimpleNamespace(count=1),
+    )
+    guild = FakeGuild(123, voice_client=None, audit_log_entries=[recent_disconnect])
+    guild_settings = FakeGuildSettingsRepository(
+        [
+            GuildSettings(
+                guild_id=guild.id,
+                voice_channel_id=bot_channel.id,
+                selected_category="chill",
+                volume=0.01,
+                stay_connected=True,
+                panel_channel_id=None,
+                panel_message_id=None,
+            )
+        ]
+    )
+    player_manager = FakePlayerManager()
+    refreshed: list[int] = []
+    bot = object.__new__(LofiDiscordBot)
+    bot.guild_settings = guild_settings
+    bot.player_manager = player_manager
+    bot.settings = type("FakeSettings", (), {"default_category": "chill"})()
+    bot._connection = SimpleNamespace(user=SimpleNamespace(id=bot_user_id))
+    bot._last_gateway_recoverable_disconnect_at = bot_module.time.monotonic()
     bot.get_channel = lambda channel_id: bot_channel if channel_id == bot_channel.id else None
 
     async def refresh_panel(guild_id: int) -> None:

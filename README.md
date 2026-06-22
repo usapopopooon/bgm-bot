@@ -160,6 +160,8 @@ Bot Permissions:
 - `Send Messages`
 - `Embed Links`
 
+`View Audit Log` は、Discord上でBotをVCから手動切断した場合にユーザー意図の切断として扱うために使います。権限がない場合、Stay ONの予期しない切断は復帰対象として扱われます。確実にStayを止める場合は `/leave` または接続中の `/vc` を使ってください。
+
 開発中は `DISCORD_GUILD_ID` にテストサーバーIDを入れると、`/vc` がすぐ反映されます。未指定の場合はグローバルコマンドとして同期されるため、Discord側の反映に時間がかかることがあります。
 
 ## Run Locally

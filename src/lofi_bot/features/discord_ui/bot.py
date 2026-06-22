@@ -30,7 +30,7 @@ GATEWAY_SERVER_ERROR_MAX_STATUS = 599
 GATEWAY_RECOVERABLE_DISCONNECT_RESTORE_WINDOW_SECONDS = 180.0
 GATEWAY_SESSION_INVALIDATED_MESSAGE = "session has been invalidated"
 USER_REQUESTED_DISCONNECT_WINDOW_SECONDS = 60.0
-MANUAL_VOICE_DISCONNECT_AUDIT_WINDOW_SECONDS = 30.0
+MANUAL_VOICE_DISCONNECT_AUDIT_WINDOW_SECONDS = 15.0
 
 
 class VoiceDisconnectMeaning(Enum):
@@ -269,6 +269,8 @@ class LofiDiscordBot(commands.Bot):
         guild_id = guild.id
         if self._has_recent_user_requested_disconnect(guild_id):
             return VoiceDisconnectMeaning.USER_REQUESTED
+        if self._has_recent_gateway_recoverable_disconnect():
+            return VoiceDisconnectMeaning.RECOVERABLE
         if await self._has_recent_manual_voice_disconnect_audit_entry(guild):
             return VoiceDisconnectMeaning.USER_REQUESTED
         return VoiceDisconnectMeaning.RECOVERABLE
@@ -287,6 +289,9 @@ class LofiDiscordBot(commands.Bot):
                 limit=5,
                 action=discord.AuditLogAction.member_disconnect,
             ):
+                disconnected_count = getattr(getattr(entry, "extra", None), "count", None)
+                if disconnected_count != 1:
+                    continue
                 created_at = getattr(entry, "created_at", None)
                 if created_at is None:
                     continue
@@ -499,11 +504,12 @@ class LofiDiscordBot(commands.Bot):
         LOGGER.info("Synced global commands")
 
     async def _restore_stay_connected_voice_with_retries(self) -> None:
+        completed_guild_ids: set[int] = set()
         for attempt in range(1, STAY_CONNECTED_RECONNECT_ATTEMPTS + 1):
             if getattr(self, "_shutting_down", False):
                 return
 
-            restored = await self._restore_stay_connected_voice()
+            restored = await self._restore_stay_connected_voice(completed_guild_ids)
             if restored:
                 return
 
@@ -519,7 +525,12 @@ class LofiDiscordBot(commands.Bot):
 
         LOGGER.warning("Giving up saved stay-connected restore for now")
 
-    async def _restore_stay_connected_voice(self) -> bool:
+    async def _restore_stay_connected_voice(
+        self,
+        completed_guild_ids: set[int] | None = None,
+    ) -> bool:
+        if completed_guild_ids is None:
+            completed_guild_ids = set()
         settings_list = await self.guild_settings.list_stay_connected()
         if not settings_list:
             LOGGER.info("No stay-connected voice sessions to restore")
@@ -528,7 +539,10 @@ class LofiDiscordBot(commands.Bot):
         LOGGER.info("Restoring stay-connected voice sessions count=%s", len(settings_list))
         all_restored = True
         for settings in settings_list:
+            if settings.guild_id in completed_guild_ids:
+                continue
             if settings.voice_channel_id is None:
+                completed_guild_ids.add(settings.guild_id)
                 continue
 
             guild = self.get_guild(settings.guild_id)
@@ -550,6 +564,7 @@ class LofiDiscordBot(commands.Bot):
                         settings.guild_id,
                         settings.voice_channel_id,
                     )
+                    completed_guild_ids.add(settings.guild_id)
                     continue
                 except discord.Forbidden:
                     LOGGER.warning(
@@ -557,6 +572,7 @@ class LofiDiscordBot(commands.Bot):
                         settings.guild_id,
                         settings.voice_channel_id,
                     )
+                    completed_guild_ids.add(settings.guild_id)
                     continue
                 except discord.HTTPException:
                     LOGGER.exception(
@@ -574,6 +590,7 @@ class LofiDiscordBot(commands.Bot):
                     settings.guild_id,
                     settings.voice_channel_id,
                 )
+                completed_guild_ids.add(settings.guild_id)
                 continue
 
             try:
@@ -585,12 +602,14 @@ class LofiDiscordBot(commands.Bot):
                     settings.guild_id,
                     settings.voice_channel_id,
                 )
+                completed_guild_ids.add(settings.guild_id)
             except discord.Forbidden:
                 LOGGER.warning(
                     "Cannot restore voice session; missing voice permission guild=%s channel=%s",
                     settings.guild_id,
                     settings.voice_channel_id,
                 )
+                completed_guild_ids.add(settings.guild_id)
             except discord.HTTPException:
                 LOGGER.exception(
                     "Cannot restore voice session; Discord request failed guild=%s channel=%s",
