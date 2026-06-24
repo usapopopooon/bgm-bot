@@ -440,7 +440,7 @@ async def test_setup_hook_registers_commands_without_panel() -> None:
         await bot.setup_hook()
 
         command_names = [command.name for command in bot.tree.get_commands()]
-        assert command_names == ["vc", "volume", "stay", "leave", "member_commands"]
+        assert command_names == ["play", "volume", "stay", "leave", "member_commands"]
     finally:
         await bot.close()
 
@@ -1142,9 +1142,9 @@ def test_member_switchable_commands_are_not_discord_admin_locked() -> None:
     bot = object.__new__(LofiDiscordBot)
     commands = [
         bot_module.app_commands.Command(
-            name="vc",
-            description="VCへの接続/切断を切り替えて操作パネルを表示します",
-            callback=bot._vc_command,
+            name="play",
+            description="BGMの再生/停止を切り替えて操作パネルを表示します",
+            callback=bot._play_command,
         ),
         bot_module.app_commands.Command(
             name="volume",
@@ -1173,7 +1173,7 @@ def test_member_switchable_commands_are_not_discord_admin_locked() -> None:
     assert member_commands.default_permissions.administrator
 
 
-async def test_vc_command_connects_and_posts_panel_for_admin(monkeypatch) -> None:
+async def test_play_command_connects_and_posts_panel_for_admin(monkeypatch) -> None:
     guild_settings = FakeGuildSettingsRepository([])
     player_manager = FakePlayerManager()
     bot = object.__new__(LofiDiscordBot)
@@ -1189,7 +1189,7 @@ async def test_vc_command_connects_and_posts_panel_for_admin(monkeypatch) -> Non
     monkeypatch.setattr(bot_module.discord, "Member", FakeCommandMember)
     monkeypatch.setattr(bot_module.discord, "VoiceChannel", FakeVoiceChannel)
 
-    await LofiDiscordBot._vc_command(bot, interaction)
+    await LofiDiscordBot._play_command(bot, interaction)
 
     assert interaction.response.deferred is True
     assert player_manager.connected == [(123, 456)]
@@ -1198,7 +1198,7 @@ async def test_vc_command_connects_and_posts_panel_for_admin(monkeypatch) -> Non
     assert guild_settings.panel_updates == [(123, 456, 789)]
 
 
-async def test_vc_command_toggles_disconnect_for_admin(monkeypatch) -> None:
+async def test_play_command_toggles_disconnect_for_admin(monkeypatch) -> None:
     player_manager = FakePlayerManager()
     refreshed: list[int] = []
     channel = FakeVoiceChannel(456)
@@ -1217,7 +1217,7 @@ async def test_vc_command_toggles_disconnect_for_admin(monkeypatch) -> None:
     )
     monkeypatch.setattr(bot_module.discord, "Member", FakeCommandMember)
 
-    await LofiDiscordBot._vc_command(bot, interaction)
+    await LofiDiscordBot._play_command(bot, interaction)
 
     assert player_manager.leave_calls == [(123, True, True)]
     assert player_manager.connected == []
@@ -1227,7 +1227,7 @@ async def test_vc_command_toggles_disconnect_for_admin(monkeypatch) -> None:
     assert interaction.response.messages == [("VCから退出しました。", True)]
 
 
-async def test_vc_command_disconnects_voice_client_without_player(monkeypatch) -> None:
+async def test_play_command_disconnects_voice_client_without_player(monkeypatch) -> None:
     player_manager = FakePlayerManager()
     player_manager.left = False
     refreshed: list[int] = []
@@ -1248,7 +1248,7 @@ async def test_vc_command_disconnects_voice_client_without_player(monkeypatch) -
     )
     monkeypatch.setattr(bot_module.discord, "Member", FakeCommandMember)
 
-    await LofiDiscordBot._vc_command(bot, interaction)
+    await LofiDiscordBot._play_command(bot, interaction)
 
     assert player_manager.leave_calls == [(123, True, True)]
     assert voice_client.disconnect_calls == [True]
@@ -1257,7 +1257,7 @@ async def test_vc_command_disconnects_voice_client_without_player(monkeypatch) -
     assert interaction.response.messages == [("VCから退出しました。", True)]
 
 
-async def test_vc_command_rejects_non_admin(monkeypatch) -> None:
+async def test_play_command_rejects_non_admin(monkeypatch) -> None:
     player_manager = FakePlayerManager()
     bot = object.__new__(LofiDiscordBot)
     bot.player_manager = player_manager
@@ -1270,12 +1270,12 @@ async def test_vc_command_rejects_non_admin(monkeypatch) -> None:
     )
     monkeypatch.setattr(bot_module.discord, "Member", FakeCommandMember)
 
-    await LofiDiscordBot._vc_command(bot, interaction)
+    await LofiDiscordBot._play_command(bot, interaction)
 
     assert player_manager.connected == []
     assert player_manager.leave_calls == []
     assert interaction.response.messages == [
-        ("VC接続は現在管理者のみ使えます。", True),
+        ("BGM再生は現在管理者のみ使えます。", True),
     ]
 
 

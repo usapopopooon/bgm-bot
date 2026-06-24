@@ -56,7 +56,7 @@ async def test_panel_embed_uses_japanese_labels_without_admin_status() -> None:
     assert fields["検索元"] == "[Jamendo: chill](https://www.jamendo.com/search?q=chill)"
     assert fields["再生中"] == "準備中"
     assert "Progress" not in fields
-    assert embed.footer.text == "パネルが流れたら /vc で再投稿できます。"
+    assert embed.footer.text == "パネルが流れたら /play で再投稿できます。"
     assert guild_settings.get_or_create_calls == 0
 
 

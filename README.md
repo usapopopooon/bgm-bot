@@ -2,11 +2,11 @@
 
 Discordのボイスチャンネルに接続して、Jamendoのchill系ボーカルなし曲をランダム再生するBot。
 
-操作はシンプルです。許可されたユーザーがVCに入った状態で `/vc` を実行するとBotが接続し、表示された操作パネルから曲送りができます。接続中に `/vc` を実行するとBotは切断します。VC接続、音量、Stay、退出は既定では管理者のみ操作でき、管理者が `/member_commands` でメンバーにも許可できます。
+操作はシンプルです。許可されたユーザーがVCに入った状態で `/play` を実行するとBotが接続し、表示された操作パネルから曲送りができます。接続中に `/play` を実行するとBotは切断します。BGM再生、音量、Stay、退出は既定では管理者のみ操作でき、管理者が `/member_commands` でメンバーにも許可できます。
 
 ## Features
 
-- `/vc` で実行者がいるVCへの接続と切断を切り替え
+- `/play` で実行者がいるVCへの接続と切断を切り替え
 - カテゴリは `chill` 固定
 - Jamendo APIの `vocalinstrumental=instrumental` でボーカルなし曲だけを取得
 - `/volume` コマンドで1%刻みの音量設定
@@ -36,7 +36,7 @@ src/lofi_bot/
   features/
     catalog/             # Jamendo同期、カテゴリ定義、曲リポジトリ
       test_*.py
-    discord_ui/          # /vc、操作パネル、Select/Button
+    discord_ui/          # /play、操作パネル、Select/Button
     guild_settings/      # ギルドごとの設定保存
     playback/            # VC接続、ffmpeg再生、再生ループ
       test_*.py
@@ -45,7 +45,7 @@ src/lofi_bot/
 Botの基本フロー:
 
 ```text
-/vc
+/play
   -> 未接続なら実行者のVCへ接続
   -> 操作パネルを投稿
   -> chillカテゴリの未再生曲からランダム再生
@@ -54,7 +54,7 @@ Botの基本フロー:
   -> Jamendo APIからchillの曲を再取得
   -> 取得できなければ再生履歴をリセットして同じリストの次周へ
 
-/vc
+/play
   -> 接続中ならVCから切断
   -> 保存済みVCをクリアし、StayをOFFにする
 
@@ -161,9 +161,9 @@ Bot Permissions:
 - `Send Messages`
 - `Embed Links`
 
-`View Audit Log` は、Discord上でBotをVCから手動切断した場合にユーザー意図の切断として扱うために使います。権限がない場合、Stay ONの予期しない切断は復帰対象として扱われます。確実にStayを止める場合は `/leave` または接続中の `/vc` を使ってください。
+`View Audit Log` は、Discord上でBotをVCから手動切断した場合にユーザー意図の切断として扱うために使います。権限がない場合、Stay ONの予期しない切断は復帰対象として扱われます。確実にStayを止める場合は `/leave` または接続中の `/play` を使ってください。
 
-開発中は `DISCORD_GUILD_ID` にテストサーバーIDを入れると、`/vc` がすぐ反映されます。未指定の場合はグローバルコマンドとして同期されるため、Discord側の反映に時間がかかることがあります。
+開発中は `DISCORD_GUILD_ID` にテストサーバーIDを入れると、`/play` がすぐ反映されます。未指定の場合はグローバルコマンドとして同期されるため、Discord側の反映に時間がかかることがあります。
 
 ## Run Locally
 
@@ -179,7 +179,7 @@ cp .env.example .env
 docker compose up --build
 ```
 
-Botが起動したら、Discordで管理者がVCに入って `/vc` を実行してください。メンバーにも操作を許可する場合は、管理者が `/member_commands` を実行します。
+Botが起動したら、Discordで管理者がVCに入って `/play` を実行してください。メンバーにも操作を許可する場合は、管理者が `/member_commands` を実行します。
 
 ## Coolify Deployment
 
@@ -227,7 +227,7 @@ BotはDB接続を起動時にリトライするため、Coolify上でPostgresの
 Slash commands:
 
 ```text
-/vc
+/play
 /volume percent:1..100
 /stay
 /leave
@@ -242,7 +242,7 @@ Slash commands:
 - `一時停止`: 再生を一時停止
 - `次の曲へ`: 次の曲へ
 
-`/vc` `/volume` `/stay` `/leave` は既定では管理者のみ実行できます。管理者が `/member_commands` をONにすると、メンバーもこれらのコマンドを実行できます。`/member_commands` 自体は管理者のみ実行できます。パネルがチャットの上に流れた時は、未接続の状態で `/vc` を実行すると現在のチャンネルへ新しいパネルを投稿し、以後の曲情報更新先もその新しいパネルになります。接続中の `/vc` と `/leave` はStayをOFFにして保存済みVCもクリアするため、次回起動時に自動復帰しません。`/stay` はStayのON/OFFを切り替えます。StayをOFFにした時、VCが空なら自動退出します。カテゴリはchill固定です。既存環境に `DEFAULT_CATEGORY` が残っていても無視されます。
+`/play` `/volume` `/stay` `/leave` は既定では管理者のみ実行できます。管理者が `/member_commands` をONにすると、メンバーもこれらのコマンドを実行できます。`/member_commands` 自体は管理者のみ実行できます。パネルがチャットの上に流れた時は、未接続の状態で `/play` を実行すると現在のチャンネルへ新しいパネルを投稿し、以後の曲情報更新先もその新しいパネルになります。接続中の `/play` と `/leave` はStayをOFFにして保存済みVCもクリアするため、次回起動時に自動復帰しません。`/stay` はStayのON/OFFを切り替えます。StayをOFFにした時、VCが空なら自動退出します。カテゴリはchill固定です。既存環境に `DEFAULT_CATEGORY` が残っていても無視されます。
 
 VC接続時はDiscordのスピーカーミュート（`self_deaf`）を必ず有効にします。Botは他ユーザーの音声を受信しないため、VC内の人数が増えても受信処理の負荷を抑えられます。
 

@@ -33,7 +33,7 @@ class PauseButton(discord.ui.Button):
             default_category=self.view.default_category,
         )
         if not toggled:
-            embed.description = "再生中ではありません。VCに入って `/vc` を使ってください。"
+            embed.description = "再生中ではありません。VCに入って `/play` を使ってください。"
         await interaction.response.edit_message(
             embed=embed,
             view=self.view.with_current_state(interaction.guild.id),
@@ -62,7 +62,7 @@ class NextTrackButton(discord.ui.Button):
             default_category=self.view.default_category,
         )
         if not skipped:
-            embed.description = "再生中ではありません。VCに入って `/vc` を使ってください。"
+            embed.description = "再生中ではありません。VCに入って `/play` を使ってください。"
         await interaction.response.edit_message(
             embed=embed,
             view=self.view.with_current_state(interaction.guild.id),
@@ -108,7 +108,7 @@ async def build_panel_embed(
         description="チル系のボーカルなし曲をランダムに再生します。",
         color=discord.Color.blurple(),
     )
-    embed.set_footer(text="パネルが流れたら /vc で再投稿できます。")
+    embed.set_footer(text="パネルが流れたら /play で再投稿できます。")
     embed.add_field(
         name="検索元",
         value=f"[Jamendo: {category.slug}]({build_category_source_url(category)})",

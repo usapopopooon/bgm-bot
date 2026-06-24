@@ -121,9 +121,9 @@ class LofiDiscordBot(commands.Bot):
         self.add_view(self._build_control_view())
         self.tree.add_command(
             app_commands.Command(
-                name="vc",
-                description="VCへの接続/切断を切り替えて操作パネルを表示します",
-                callback=self._vc_command,
+                name="play",
+                description="BGMの再生/停止を切り替えて操作パネルを表示します",
+                callback=self._play_command,
             )
         )
         self.tree.add_command(
@@ -667,14 +667,14 @@ class LofiDiscordBot(commands.Bot):
         await interaction.response.send_message(message, ephemeral=True)
         return True
 
-    async def _vc_command(self, interaction: discord.Interaction) -> None:
+    async def _play_command(self, interaction: discord.Interaction) -> None:
         if interaction.guild is None or not isinstance(interaction.user, discord.Member):
             await interaction.response.send_message("サーバー内で使ってください。", ephemeral=True)
             return
 
         if await self._reject_unauthorized_command_user(
             interaction,
-            "VC接続は現在管理者のみ使えます。",
+            "BGM再生は現在管理者のみ使えます。",
         ):
             return
 
@@ -697,7 +697,7 @@ class LofiDiscordBot(commands.Bot):
         member = interaction.user
         if member.voice is None or member.voice.channel is None:
             await interaction.response.send_message(
-                "先にVCへ入ってから `/vc` を使ってください。",
+                "先にVCへ入ってから `/play` を使ってください。",
                 ephemeral=True,
             )
             return
@@ -763,7 +763,7 @@ class LofiDiscordBot(commands.Bot):
         is_playing = await self.player_manager.set_volume(interaction.guild.id, percent / 100)
         message = f"音量を {percent}% にしました。"
         if not is_playing:
-            message += " 再生中ではないので、次回 `/vc` から反映します。"
+            message += " 再生中ではないので、次回 `/play` から反映します。"
 
         await interaction.response.send_message(message, ephemeral=True)
         await self._refresh_panel_message(interaction.guild.id)
