@@ -228,7 +228,7 @@ Slash commands:
 ```text
 /vc
 /volume percent:1..100
-/stay enabled:true|false
+/stay
 /leave
 ```
 
@@ -240,7 +240,7 @@ Slash commands:
 - `一時停止`: 再生を一時停止
 - `次の曲へ`: 次の曲へ
 
-`/vc` `/volume` `/stay` `/leave` は管理者のみ実行できます。パネルがチャットの上に流れた時は、未接続の状態で管理者が `/vc` を実行すると現在のチャンネルへ新しいパネルを投稿し、以後の曲情報更新先もその新しいパネルになります。接続中の `/vc` と `/leave` はStayをOFFにして保存済みVCもクリアするため、次回起動時に自動復帰しません。`/stay enabled:false` でStayをOFFにした時、VCが空なら自動退出します。カテゴリはchill固定です。既存環境に `DEFAULT_CATEGORY` が残っていても無視されます。
+`/vc` `/volume` `/stay` `/leave` は管理者のみ実行できます。パネルがチャットの上に流れた時は、未接続の状態で管理者が `/vc` を実行すると現在のチャンネルへ新しいパネルを投稿し、以後の曲情報更新先もその新しいパネルになります。接続中の `/vc` と `/leave` はStayをOFFにして保存済みVCもクリアするため、次回起動時に自動復帰しません。`/stay` はStayのON/OFFを切り替えます。StayをOFFにした時、VCが空なら自動退出します。カテゴリはchill固定です。既存環境に `DEFAULT_CATEGORY` が残っていても無視されます。
 
 VC接続時はDiscordのスピーカーミュート（`self_deaf`）を必ず有効にします。Botは他ユーザーの音声を受信しないため、VC内の人数が増えても受信処理の負荷を抑えられます。
 

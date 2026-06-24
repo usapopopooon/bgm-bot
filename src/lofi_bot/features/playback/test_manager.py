@@ -429,6 +429,17 @@ async def test_set_stay_connected_persists_setting() -> None:
     assert settings.stay_updates == [(123, True)]
 
 
+async def test_get_stay_connected_reads_setting() -> None:
+    settings = FakeSettingsRepository(stay_connected=True)
+    manager = PlayerManager(
+        tracks=None,
+        guild_settings=settings,
+        default_category="chill",
+    )
+
+    assert await manager.get_stay_connected(123) is True
+
+
 async def test_manual_leave_can_clear_saved_channel_and_disable_stay() -> None:
     settings = FakeSettingsRepository(stay_connected=True)
     manager = PlayerManager(

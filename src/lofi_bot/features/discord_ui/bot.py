@@ -742,11 +742,9 @@ class LofiDiscordBot(commands.Bot):
         await self._refresh_panel_message(interaction.guild.id)
 
     @app_commands.default_permissions(administrator=True)
-    @app_commands.describe(enabled="StayをONにするならtrue、OFFにするならfalse")
     async def _stay_command(
         self,
         interaction: discord.Interaction,
-        enabled: bool,
     ) -> None:
         if await self._reject_non_admin(
             interaction,
@@ -754,6 +752,7 @@ class LofiDiscordBot(commands.Bot):
         ):
             return
 
+        enabled = not await self.player_manager.get_stay_connected(interaction.guild.id)
         await self.player_manager.set_stay_connected(interaction.guild.id, enabled)
         left = False
         if not enabled:

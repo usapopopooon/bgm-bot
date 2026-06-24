@@ -44,6 +44,7 @@ class FakePlayerManager:
         self.is_playing = True
         self.volumes: list[tuple[int, float]] = []
         self.stay_connected: list[tuple[int, bool]] = []
+        self.current_stay_connected = False
         self.leave_if_alone_calls: list[int] = []
         self.left_alone = False
         self.leave_calls: list[tuple[int, bool, bool]] = []
@@ -64,7 +65,11 @@ class FakePlayerManager:
         self.volumes.append((guild_id, volume))
         return self.is_playing
 
+    async def get_stay_connected(self, guild_id: int) -> bool:
+        return self.current_stay_connected
+
     async def set_stay_connected(self, guild_id: int, stay_connected: bool) -> None:
+        self.current_stay_connected = stay_connected
         self.stay_connected.append((guild_id, stay_connected))
 
     async def leave_if_alone(self, guild) -> bool:  # noqa: ANN001
@@ -1253,7 +1258,7 @@ async def test_stay_command_rejects_non_admin() -> None:
     bot._refresh_panel_message = _noop_refresh_panel
     interaction = FakeInteraction(guild_id=123, administrator=False)
 
-    await LofiDiscordBot._stay_command(bot, interaction, True)
+    await LofiDiscordBot._stay_command(bot, interaction)
 
     assert player_manager.stay_connected == []
     assert player_manager.leave_if_alone_calls == []
@@ -1262,7 +1267,7 @@ async def test_stay_command_rejects_non_admin() -> None:
     ]
 
 
-async def test_stay_command_sets_enabled_for_admin() -> None:
+async def test_stay_command_turns_on_for_admin() -> None:
     player_manager = FakePlayerManager()
     bot = object.__new__(LofiDiscordBot)
     bot.player_manager = player_manager
@@ -1274,7 +1279,7 @@ async def test_stay_command_sets_enabled_for_admin() -> None:
     bot._refresh_panel_message = refresh_panel
     interaction = FakeInteraction(guild_id=123, administrator=True)
 
-    await LofiDiscordBot._stay_command(bot, interaction, True)
+    await LofiDiscordBot._stay_command(bot, interaction)
 
     assert player_manager.stay_connected == [(123, True)]
     assert player_manager.leave_if_alone_calls == []
@@ -1286,13 +1291,14 @@ async def test_stay_command_sets_enabled_for_admin() -> None:
 
 async def test_stay_command_turns_off_and_leaves_if_alone_for_admin() -> None:
     player_manager = FakePlayerManager()
+    player_manager.current_stay_connected = True
     player_manager.left_alone = True
     bot = object.__new__(LofiDiscordBot)
     bot.player_manager = player_manager
     bot._refresh_panel_message = _noop_refresh_panel
     interaction = FakeInteraction(guild_id=123, administrator=True)
 
-    await LofiDiscordBot._stay_command(bot, interaction, False)
+    await LofiDiscordBot._stay_command(bot, interaction)
 
     assert player_manager.stay_connected == [(123, False)]
     assert player_manager.leave_if_alone_calls == [123]

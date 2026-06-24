@@ -126,6 +126,10 @@ class PlayerManager:
         player.set_volume(volume)
         return True
 
+    async def get_stay_connected(self, guild_id: int) -> bool:
+        settings = await self._guild_settings.get_or_create(guild_id, self._default_category)
+        return settings.stay_connected
+
     async def set_stay_connected(self, guild_id: int, stay_connected: bool) -> None:
         await self._guild_settings.update_stay_connected(guild_id, stay_connected)
 
