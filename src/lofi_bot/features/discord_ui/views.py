@@ -108,7 +108,7 @@ async def build_panel_embed(
         description="チル系のボーカルなし曲をランダムに再生します。",
         color=discord.Color.blurple(),
     )
-    embed.set_footer(text="パネルが流れたら管理者が /vc で再投稿できます。")
+    embed.set_footer(text="パネルが流れたら /vc で再投稿できます。")
     embed.add_field(
         name="検索元",
         value=f"[Jamendo: {category.slug}]({build_category_source_url(category)})",

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from contextlib import suppress
+from dataclasses import replace
 from datetime import timedelta
 from types import SimpleNamespace
 
@@ -14,6 +15,7 @@ class FakeGuildSettingsRepository:
         self._settings = settings
         self.list_calls = 0
         self.panel_updates: list[tuple[int, int, int]] = []
+        self.member_command_updates: list[tuple[int, bool]] = []
 
     async def list_stay_connected(self) -> list[GuildSettings]:
         self.list_calls += 1
@@ -35,6 +37,33 @@ class FakeGuildSettingsRepository:
 
     async def update_panel(self, guild_id: int, channel_id: int, message_id: int) -> None:
         self.panel_updates.append((guild_id, channel_id, message_id))
+
+    async def update_member_commands_enabled(
+        self,
+        guild_id: int,
+        member_commands_enabled: bool,
+    ) -> None:
+        self.member_command_updates.append((guild_id, member_commands_enabled))
+        for index, settings in enumerate(self._settings):
+            if settings.guild_id == guild_id:
+                self._settings[index] = replace(
+                    settings,
+                    member_commands_enabled=member_commands_enabled,
+                )
+                return
+
+        self._settings.append(
+            GuildSettings(
+                guild_id=guild_id,
+                voice_channel_id=None,
+                selected_category="chill",
+                volume=0.01,
+                stay_connected=False,
+                panel_channel_id=None,
+                panel_message_id=None,
+                member_commands_enabled=member_commands_enabled,
+            )
+        )
 
 
 class FakePlayerManager:
@@ -233,6 +262,40 @@ class FakeInteraction:
         self.followup = FakeFollowup()
 
 
+def _fake_settings() -> object:
+    return type("FakeSettings", (), {"default_category": "chill"})()
+
+
+def _guild_settings(
+    guild_id: int = 123,
+    *,
+    member_commands_enabled: bool = False,
+) -> GuildSettings:
+    return GuildSettings(
+        guild_id=guild_id,
+        voice_channel_id=None,
+        selected_category="chill",
+        volume=0.01,
+        stay_connected=False,
+        panel_channel_id=None,
+        panel_message_id=None,
+        member_commands_enabled=member_commands_enabled,
+    )
+
+
+def _set_member_command_access(
+    bot: LofiDiscordBot,
+    *,
+    member_commands_enabled: bool = False,
+) -> FakeGuildSettingsRepository:
+    guild_settings = FakeGuildSettingsRepository(
+        [_guild_settings(member_commands_enabled=member_commands_enabled)]
+    )
+    bot.guild_settings = guild_settings
+    bot.settings = _fake_settings()
+    return guild_settings
+
+
 async def test_on_ready_presence_does_not_advertise_admin_command() -> None:
     scheduler = FakeScheduler()
     activities = []
@@ -377,7 +440,7 @@ async def test_setup_hook_registers_commands_without_panel() -> None:
         await bot.setup_hook()
 
         command_names = [command.name for command in bot.tree.get_commands()]
-        assert command_names == ["vc", "volume", "stay", "leave"]
+        assert command_names == ["vc", "volume", "stay", "leave", "member_commands"]
     finally:
         await bot.close()
 
@@ -1075,33 +1138,39 @@ async def test_voice_state_update_waits_for_in_progress_voice_reconnect(
     assert player_manager.started == [guild.id]
 
 
-def test_admin_commands_default_to_admin_permission() -> None:
+def test_member_switchable_commands_are_not_discord_admin_locked() -> None:
     bot = object.__new__(LofiDiscordBot)
     commands = [
         bot_module.app_commands.Command(
             name="vc",
-            description="VCへの接続/切断を切り替えて操作パネルを表示します（管理者のみ）",
+            description="VCへの接続/切断を切り替えて操作パネルを表示します",
             callback=bot._vc_command,
         ),
         bot_module.app_commands.Command(
             name="volume",
-            description="音量を変更します（管理者のみ）",
+            description="音量を変更します",
             callback=bot._volume_command,
         ),
         bot_module.app_commands.Command(
             name="stay",
-            description="Stayを切り替えます（管理者のみ）",
+            description="Stayを切り替えます",
             callback=bot._stay_command,
         ),
         bot_module.app_commands.Command(
             name="leave",
-            description="VCから退出します（管理者のみ）",
+            description="VCから退出します",
             callback=bot._leave_command,
         ),
     ]
+    member_commands = bot_module.app_commands.Command(
+        name="member_commands",
+        description="メンバーのコマンド利用を切り替えます（管理者のみ）",
+        callback=bot._member_commands_command,
+    )
 
-    assert all(command.default_permissions is not None for command in commands)
-    assert all(command.default_permissions.administrator for command in commands)
+    assert all(command.default_permissions is None for command in commands)
+    assert member_commands.default_permissions is not None
+    assert member_commands.default_permissions.administrator
 
 
 async def test_vc_command_connects_and_posts_panel_for_admin(monkeypatch) -> None:
@@ -1192,6 +1261,7 @@ async def test_vc_command_rejects_non_admin(monkeypatch) -> None:
     player_manager = FakePlayerManager()
     bot = object.__new__(LofiDiscordBot)
     bot.player_manager = player_manager
+    _set_member_command_access(bot)
     channel = FakeVoiceChannel(456)
     interaction = FakeInteraction(
         guild_id=123,
@@ -1205,7 +1275,7 @@ async def test_vc_command_rejects_non_admin(monkeypatch) -> None:
     assert player_manager.connected == []
     assert player_manager.leave_calls == []
     assert interaction.response.messages == [
-        ("VC接続できるのは管理者だけです。", True),
+        ("VC接続は現在管理者のみ使えます。", True),
     ]
 
 
@@ -1213,6 +1283,7 @@ async def test_volume_command_rejects_non_admin() -> None:
     player_manager = FakePlayerManager()
     bot = object.__new__(LofiDiscordBot)
     bot.player_manager = player_manager
+    _set_member_command_access(bot)
     refreshed: list[int] = []
 
     async def refresh_panel(guild_id: int) -> None:
@@ -1226,7 +1297,29 @@ async def test_volume_command_rejects_non_admin() -> None:
     assert player_manager.volumes == []
     assert refreshed == []
     assert interaction.response.messages == [
-        ("音量を変更できるのは管理者だけです。", True),
+        ("音量変更は現在管理者のみ使えます。", True),
+    ]
+
+
+async def test_volume_command_allows_member_when_member_commands_are_enabled() -> None:
+    player_manager = FakePlayerManager()
+    bot = object.__new__(LofiDiscordBot)
+    bot.player_manager = player_manager
+    _set_member_command_access(bot, member_commands_enabled=True)
+    refreshed: list[int] = []
+
+    async def refresh_panel(guild_id: int) -> None:
+        refreshed.append(guild_id)
+
+    bot._refresh_panel_message = refresh_panel
+    interaction = FakeInteraction(guild_id=123, administrator=False)
+
+    await LofiDiscordBot._volume_command(bot, interaction, 42)
+
+    assert player_manager.volumes == [(123, 0.42)]
+    assert refreshed == [123]
+    assert interaction.response.messages == [
+        ("音量を 42% にしました。", True),
     ]
 
 
@@ -1255,6 +1348,7 @@ async def test_stay_command_rejects_non_admin() -> None:
     player_manager = FakePlayerManager()
     bot = object.__new__(LofiDiscordBot)
     bot.player_manager = player_manager
+    _set_member_command_access(bot)
     bot._refresh_panel_message = _noop_refresh_panel
     interaction = FakeInteraction(guild_id=123, administrator=False)
 
@@ -1263,7 +1357,7 @@ async def test_stay_command_rejects_non_admin() -> None:
     assert player_manager.stay_connected == []
     assert player_manager.leave_if_alone_calls == []
     assert interaction.response.messages == [
-        ("Stayを変更できるのは管理者だけです。", True),
+        ("Stay変更は現在管理者のみ使えます。", True),
     ]
 
 
@@ -1311,6 +1405,7 @@ async def test_leave_command_rejects_non_admin() -> None:
     player_manager = FakePlayerManager()
     bot = object.__new__(LofiDiscordBot)
     bot.player_manager = player_manager
+    _set_member_command_access(bot)
     bot._refresh_panel_message = _noop_refresh_panel
     interaction = FakeInteraction(guild_id=123, administrator=False)
 
@@ -1318,7 +1413,7 @@ async def test_leave_command_rejects_non_admin() -> None:
 
     assert player_manager.leave_calls == []
     assert interaction.response.messages == [
-        ("VCから退出できるのは管理者だけです。", True),
+        ("VC退出は現在管理者のみ使えます。", True),
     ]
 
 
@@ -1341,6 +1436,45 @@ async def test_leave_command_leaves_for_admin() -> None:
     assert 123 in bot._last_user_requested_disconnect_at_by_guild
     assert interaction.response.messages == [
         ("VCから退出しました。", True),
+    ]
+
+
+async def test_member_commands_command_rejects_non_admin() -> None:
+    bot = object.__new__(LofiDiscordBot)
+    _set_member_command_access(bot)
+    interaction = FakeInteraction(guild_id=123, administrator=False)
+
+    await LofiDiscordBot._member_commands_command(bot, interaction)
+
+    assert bot.guild_settings.member_command_updates == []
+    assert interaction.response.messages == [
+        ("メンバーのコマンド利用を変更できるのは管理者だけです。", True),
+    ]
+
+
+async def test_member_commands_command_turns_on_for_admin() -> None:
+    bot = object.__new__(LofiDiscordBot)
+    guild_settings = _set_member_command_access(bot)
+    interaction = FakeInteraction(guild_id=123, administrator=True)
+
+    await LofiDiscordBot._member_commands_command(bot, interaction)
+
+    assert guild_settings.member_command_updates == [(123, True)]
+    assert interaction.response.messages == [
+        ("メンバーのコマンド利用を ON にしました。", True),
+    ]
+
+
+async def test_member_commands_command_turns_off_for_admin() -> None:
+    bot = object.__new__(LofiDiscordBot)
+    guild_settings = _set_member_command_access(bot, member_commands_enabled=True)
+    interaction = FakeInteraction(guild_id=123, administrator=True)
+
+    await LofiDiscordBot._member_commands_command(bot, interaction)
+
+    assert guild_settings.member_command_updates == [(123, False)]
+    assert interaction.response.messages == [
+        ("メンバーのコマンド利用を OFF にしました。", True),
     ]
 
 

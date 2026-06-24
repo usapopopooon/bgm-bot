@@ -14,6 +14,7 @@ class GuildSettings:
     stay_connected: bool
     panel_channel_id: int | None
     panel_message_id: int | None
+    member_commands_enabled: bool = False
 
 
 class GuildSettingsRepository:
@@ -95,6 +96,23 @@ class GuildSettingsRepository:
             stay_connected,
         )
 
+    async def update_member_commands_enabled(
+        self,
+        guild_id: int,
+        member_commands_enabled: bool,
+    ) -> None:
+        await self._pool.execute(
+            """
+            INSERT INTO guild_settings (guild_id, member_commands_enabled)
+            VALUES ($1, $2)
+            ON CONFLICT (guild_id) DO UPDATE
+            SET member_commands_enabled = EXCLUDED.member_commands_enabled,
+                updated_at = now()
+            """,
+            guild_id,
+            member_commands_enabled,
+        )
+
     async def list_stay_connected(self) -> list[GuildSettings]:
         rows = await self._pool.fetch(
             """
@@ -136,4 +154,5 @@ class GuildSettingsRepository:
             stay_connected=row["stay_connected"],
             panel_channel_id=row["panel_channel_id"],
             panel_message_id=row["panel_message_id"],
+            member_commands_enabled=row["member_commands_enabled"],
         )

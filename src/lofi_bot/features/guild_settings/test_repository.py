@@ -33,3 +33,17 @@ async def test_update_panel_upserts_panel_target() -> None:
     assert "ON CONFLICT (guild_id) DO UPDATE" in query
     assert "panel_channel_id = EXCLUDED.panel_channel_id" in query
     assert args == (123, 456, 789)
+
+
+async def test_update_member_commands_enabled_upserts_setting() -> None:
+    pool = FakePool()
+    repository = GuildSettingsRepository(pool)
+
+    await repository.update_member_commands_enabled(123, True)
+
+    query, args = pool.execute_calls[0]
+    assert "INSERT INTO guild_settings" in query
+    assert "member_commands_enabled" in query
+    assert "ON CONFLICT (guild_id) DO UPDATE" in query
+    assert "member_commands_enabled = EXCLUDED.member_commands_enabled" in query
+    assert args == (123, True)

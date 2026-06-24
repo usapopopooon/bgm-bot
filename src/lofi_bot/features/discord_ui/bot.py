@@ -122,29 +122,36 @@ class LofiDiscordBot(commands.Bot):
         self.tree.add_command(
             app_commands.Command(
                 name="vc",
-                description="VCへの接続/切断を切り替えて操作パネルを表示します（管理者のみ）",
+                description="VCへの接続/切断を切り替えて操作パネルを表示します",
                 callback=self._vc_command,
             )
         )
         self.tree.add_command(
             app_commands.Command(
                 name="volume",
-                description="音量を変更します（管理者のみ）",
+                description="音量を変更します",
                 callback=self._volume_command,
             )
         )
         self.tree.add_command(
             app_commands.Command(
                 name="stay",
-                description="Stayを切り替えます（管理者のみ）",
+                description="Stayを切り替えます",
                 callback=self._stay_command,
             )
         )
         self.tree.add_command(
             app_commands.Command(
                 name="leave",
-                description="VCから退出します（管理者のみ）",
+                description="VCから退出します",
                 callback=self._leave_command,
+            )
+        )
+        self.tree.add_command(
+            app_commands.Command(
+                name="member_commands",
+                description="メンバーのコマンド利用を切り替えます（管理者のみ）",
+                callback=self._member_commands_command,
             )
         )
         if self.settings.sync_commands:
@@ -638,15 +645,36 @@ class LofiDiscordBot(commands.Bot):
 
         return False
 
-    @app_commands.default_permissions(administrator=True)
+    async def _reject_unauthorized_command_user(
+        self,
+        interaction: discord.Interaction,
+        message: str,
+    ) -> bool:
+        if interaction.guild is None:
+            await interaction.response.send_message("サーバー内で使ってください。", ephemeral=True)
+            return True
+
+        if interaction.permissions.administrator:
+            return False
+
+        settings = await self.guild_settings.get_or_create(
+            interaction.guild.id,
+            self.settings.default_category,
+        )
+        if settings.member_commands_enabled:
+            return False
+
+        await interaction.response.send_message(message, ephemeral=True)
+        return True
+
     async def _vc_command(self, interaction: discord.Interaction) -> None:
         if interaction.guild is None or not isinstance(interaction.user, discord.Member):
             await interaction.response.send_message("サーバー内で使ってください。", ephemeral=True)
             return
 
-        if await self._reject_non_admin(
+        if await self._reject_unauthorized_command_user(
             interaction,
-            "VC接続できるのは管理者だけです。",
+            "VC接続は現在管理者のみ使えます。",
         ):
             return
 
@@ -720,16 +748,15 @@ class LofiDiscordBot(commands.Bot):
             ),
         )
 
-    @app_commands.default_permissions(administrator=True)
     @app_commands.describe(percent="1〜100の音量")
     async def _volume_command(
         self,
         interaction: discord.Interaction,
         percent: app_commands.Range[int, 1, 100],
     ) -> None:
-        if await self._reject_non_admin(
+        if await self._reject_unauthorized_command_user(
             interaction,
-            "音量を変更できるのは管理者だけです。",
+            "音量変更は現在管理者のみ使えます。",
         ):
             return
 
@@ -741,14 +768,13 @@ class LofiDiscordBot(commands.Bot):
         await interaction.response.send_message(message, ephemeral=True)
         await self._refresh_panel_message(interaction.guild.id)
 
-    @app_commands.default_permissions(administrator=True)
     async def _stay_command(
         self,
         interaction: discord.Interaction,
     ) -> None:
-        if await self._reject_non_admin(
+        if await self._reject_unauthorized_command_user(
             interaction,
-            "Stayを変更できるのは管理者だけです。",
+            "Stay変更は現在管理者のみ使えます。",
         ):
             return
 
@@ -766,11 +792,10 @@ class LofiDiscordBot(commands.Bot):
         await interaction.response.send_message(message, ephemeral=True)
         await self._refresh_panel_message(interaction.guild.id)
 
-    @app_commands.default_permissions(administrator=True)
     async def _leave_command(self, interaction: discord.Interaction) -> None:
-        if await self._reject_non_admin(
+        if await self._reject_unauthorized_command_user(
             interaction,
-            "VCから退出できるのは管理者だけです。",
+            "VC退出は現在管理者のみ使えます。",
         ):
             return
 
@@ -784,6 +809,24 @@ class LofiDiscordBot(commands.Bot):
 
         await interaction.response.send_message(message, ephemeral=True)
         await self._refresh_panel_message(interaction.guild.id)
+
+    @app_commands.default_permissions(administrator=True)
+    async def _member_commands_command(self, interaction: discord.Interaction) -> None:
+        if await self._reject_non_admin(
+            interaction,
+            "メンバーのコマンド利用を変更できるのは管理者だけです。",
+        ):
+            return
+
+        settings = await self.guild_settings.get_or_create(
+            interaction.guild.id,
+            self.settings.default_category,
+        )
+        enabled = not settings.member_commands_enabled
+        await self.guild_settings.update_member_commands_enabled(interaction.guild.id, enabled)
+
+        message = f"メンバーのコマンド利用を {'ON' if enabled else 'OFF'} にしました。"
+        await interaction.response.send_message(message, ephemeral=True)
 
     async def _refresh_panel_message(self, guild_id: int) -> None:
         settings = await self.guild_settings.get_or_create(
