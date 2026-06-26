@@ -65,6 +65,7 @@ class FakePlayer:
         self.current_track = None
         self.is_paused = False
         self.pause_toggled = False
+        self.restarted_after_reconnect = False
 
     async def stop(self) -> None:
         self.stopped = True
@@ -76,6 +77,9 @@ class FakePlayer:
         self.pause_toggled = True
         self.is_paused = not self.is_paused
         return True
+
+    async def restart_after_reconnect(self) -> None:
+        self.restarted_after_reconnect = True
 
     async def set_category(self, category_slug: str) -> None:
         self.category_slug = category_slug
@@ -327,6 +331,21 @@ async def test_set_track_changed_callback_updates_existing_players() -> None:
     manager.set_track_changed_callback(refresh_panel)
 
     assert player.track_changed_callback is refresh_panel
+
+
+async def test_restart_after_reconnect_restarts_existing_player() -> None:
+    manager = PlayerManager(
+        tracks=None,
+        guild_settings=FakeSettingsRepository(),
+        default_category="chill",
+    )
+    player = FakePlayer(is_active=True)
+    manager._players[123] = player
+    guild = SimpleNamespace(id=123)
+
+    await manager.restart_after_reconnect(guild)
+
+    assert player.restarted_after_reconnect is True
 
 
 class FakeMember:

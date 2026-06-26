@@ -339,7 +339,7 @@ class LofiDiscordBot(commands.Bot):
             if voice_client is not None:
                 channel = getattr(voice_client, "channel", None) or previous_channel
                 await self.player_manager.connect(guild, channel)
-                await self.player_manager.start_saved_category(guild)
+                await self.player_manager.restart_after_reconnect(guild)
                 LOGGER.info(
                     "Recovered voice connection after transient disconnect guild=%s",
                     guild.id,
@@ -425,7 +425,7 @@ class LofiDiscordBot(commands.Bot):
                     return True
 
                 await self.player_manager.connect(guild, channel)
-                await self.player_manager.start_saved_category(guild)
+                await self.player_manager.restart_after_reconnect(guild)
                 LOGGER.info(
                     "Restored stay-connected voice after disconnect guild=%s channel=%s",
                     guild.id,
@@ -460,8 +460,7 @@ class LofiDiscordBot(commands.Bot):
             if attempt < STAY_CONNECTED_RECONNECT_ATTEMPTS:
                 delay_seconds = _stay_connected_reconnect_delay(attempt)
                 LOGGER.info(
-                    "Retrying stay-connected voice restore guild=%s in %.1fs "
-                    "attempt=%s/%s",
+                    "Retrying stay-connected voice restore guild=%s in %.1fs attempt=%s/%s",
                     guild.id,
                     delay_seconds,
                     attempt + 1,
@@ -743,9 +742,7 @@ class LofiDiscordBot(commands.Bot):
             self.guild_settings,
             self.player_manager,
             default_category=self.settings.default_category,
-            is_paused=(
-                guild_id is not None and self.player_manager.is_paused(guild_id)
-            ),
+            is_paused=(guild_id is not None and self.player_manager.is_paused(guild_id)),
         )
 
     @app_commands.describe(percent="1〜100の音量")

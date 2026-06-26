@@ -70,6 +70,7 @@ class FakePlayerManager:
     def __init__(self) -> None:
         self.connected: list[tuple[int, int]] = []
         self.started: list[int] = []
+        self.restarted: list[int] = []
         self.is_playing = True
         self.volumes: list[tuple[int, float]] = []
         self.stay_connected: list[tuple[int, bool]] = []
@@ -89,6 +90,9 @@ class FakePlayerManager:
 
     async def start_saved_category(self, guild):  # noqa: ANN001
         self.started.append(guild.id)
+
+    async def restart_after_reconnect(self, guild):  # noqa: ANN001
+        self.restarted.append(guild.id)
 
     async def set_volume(self, guild_id: int, volume: float) -> bool:
         self.volumes.append((guild_id, volume))
@@ -252,9 +256,7 @@ class FakeInteraction:
         voice_client=None,  # noqa: ANN001
     ) -> None:
         self.guild = (
-            FakeGuild(guild_id, voice_client=voice_client)
-            if guild_id is not None
-            else None
+            FakeGuild(guild_id, voice_client=voice_client) if guild_id is not None else None
         )
         self.user = user if user is not None else SimpleNamespace()
         self.permissions = FakePermissions(administrator)
@@ -560,7 +562,7 @@ async def test_voice_state_update_restores_stay_connected_after_voice_reconnect_
 
     assert player_manager.external_disconnect_calls == []
     assert player_manager.connected == [(guild.id, bot_channel.id)]
-    assert player_manager.started == [guild.id]
+    assert player_manager.restarted == [guild.id]
     assert refreshed == [guild.id]
 
 
@@ -675,7 +677,7 @@ async def test_stay_connected_self_disconnect_recovers_without_user_intent(
 
     assert player_manager.external_disconnect_calls == []
     assert player_manager.connected == [(guild.id, bot_channel.id)]
-    assert player_manager.started == [guild.id]
+    assert player_manager.restarted == [guild.id]
     assert refreshed == [guild.id]
 
 
@@ -732,7 +734,7 @@ async def test_stay_connected_self_disconnect_recovers_when_audit_log_unavailabl
 
     assert player_manager.external_disconnect_calls == []
     assert player_manager.connected == [(guild.id, bot_channel.id)]
-    assert player_manager.started == [guild.id]
+    assert player_manager.restarted == [guild.id]
     assert refreshed == [guild.id]
 
 
@@ -793,7 +795,7 @@ async def test_stay_connected_self_disconnect_ignores_ambiguous_audit_log(
 
     assert player_manager.external_disconnect_calls == []
     assert player_manager.connected == [(guild.id, bot_channel.id)]
-    assert player_manager.started == [guild.id]
+    assert player_manager.restarted == [guild.id]
     assert refreshed == [guild.id]
 
 
@@ -850,7 +852,7 @@ async def test_gateway_recoverable_signal_overrides_ambiguous_audit_log(
 
     assert player_manager.external_disconnect_calls == []
     assert player_manager.connected == [(guild.id, bot_channel.id)]
-    assert player_manager.started == [guild.id]
+    assert player_manager.restarted == [guild.id]
     assert refreshed == [guild.id]
 
 
@@ -1097,7 +1099,7 @@ async def test_voice_state_update_recovers_self_disconnect_after_voice_reconnect
 
     assert player_manager.external_disconnect_calls == []
     assert player_manager.connected == [(guild.id, bot_channel.id)]
-    assert player_manager.started == [guild.id]
+    assert player_manager.restarted == [guild.id]
     assert refreshed == [guild.id]
 
 
@@ -1135,7 +1137,7 @@ async def test_voice_state_update_waits_for_in_progress_voice_reconnect(
 
     assert player_manager.external_disconnect_calls == []
     assert player_manager.connected == [(guild.id, bot_channel.id)]
-    assert player_manager.started == [guild.id]
+    assert player_manager.restarted == [guild.id]
 
 
 def test_member_switchable_commands_are_not_discord_admin_locked() -> None:

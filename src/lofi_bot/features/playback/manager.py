@@ -95,6 +95,12 @@ class PlayerManager:
             return
         await player.play_next()
 
+    async def restart_after_reconnect(self, guild: discord.Guild) -> None:
+        player = self._players.get(guild.id)
+        if player is None:
+            return
+        await player.restart_after_reconnect()
+
     async def set_category(self, guild_id: int, category_slug: str) -> bool:
         get_category(category_slug)
         player = self._players.get(guild_id)

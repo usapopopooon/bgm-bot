@@ -211,6 +211,26 @@ async def test_play_next_does_not_leave_stale_current_track_after_play_failures(
     assert repository.failed == [1, 2, 3, 4, 5]
 
 
+async def test_restart_after_reconnect_stops_stale_player_before_next_track() -> None:
+    voice_client = FakeVoiceClient(playing=True)
+    repository = FakeTrackRepository([make_track(1)])
+    player = GuildPlayer(
+        guild_id=123,
+        voice_client=voice_client,
+        tracks=repository,
+        guild_settings=None,
+        category_slug="chill",
+        volume=0.01,
+    )
+    player._create_source = lambda track: object()
+
+    await player.restart_after_reconnect()
+
+    assert len(voice_client.played_sources) == 1
+    assert player.current_track == repository.tracks[0]
+    assert repository.recorded == [1]
+
+
 async def test_play_next_refreshes_catalog_when_cycle_is_exhausted() -> None:
     refreshes: list[str] = []
     repository = FakeTrackRepository([])

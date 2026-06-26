@@ -111,6 +111,14 @@ class GuildPlayer:
         async with self._lock:
             await self._play_next_locked()
 
+    async def restart_after_reconnect(self) -> None:
+        async with self._lock:
+            if self._stopped or not self.voice_client.is_connected():
+                return
+            if self.voice_client.is_playing() or self.voice_client.is_paused():
+                self.voice_client.stop()
+            await self._play_next_locked()
+
     async def _play_next_locked(self) -> None:
         if self._stopped or not self.voice_client.is_connected():
             return

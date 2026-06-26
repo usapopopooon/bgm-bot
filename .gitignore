@@ -1,10 +1,41 @@
+# Python
 __pycache__/
 *.py[cod]
 *.egg-info/
+
+# Virtualenvs
+.venv/
+venv/
+env/
+ENV/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Tool caches / reports
 .pytest_cache/
 .ruff_cache/
-.venv/
-.env
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# App-local generated data
 data/
+
+# Packaging
 dist/
 build/
+
+# Logs
+*.log
+logs/
+
+# OS / Editor
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*~
