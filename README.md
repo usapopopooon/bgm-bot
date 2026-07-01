@@ -206,11 +206,11 @@ DISCORD_GUILD_ID=...
 
 BotはHTTPサーバーではないため、外部公開ポートやドメイン設定は不要です。
 
-Composeには低めのリソース制限を入れています。
+Composeには音声再生の安定性を優先したリソース制限を入れています。
 
 | Service | Memory | CPU |
 | --- | --- | --- |
-| `bot` | 256MB | 0.50 |
+| `bot` | 512MB | 1.0 |
 | `postgres` | 256MB | 0.50 |
 
 Postgresも小さめに調整しています。
