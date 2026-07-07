@@ -24,13 +24,22 @@ class FakeBot:
 
 
 class FakeJoinAnnouncements:
-    def __init__(self, *, enabled: bool, probe_result: bool = True) -> None:
+    def __init__(
+        self,
+        *,
+        enabled: bool,
+        probe_result: bool = True,
+        probe_error: Exception | None = None,
+    ) -> None:
         self.is_enabled = enabled
         self.probe_result = probe_result
+        self.probe_error = probe_error
         self.probe_calls = 0
 
     async def probe_startup_synthesis(self) -> bool:
         self.probe_calls += 1
+        if self.probe_error is not None:
+            raise self.probe_error
         return self.probe_result
 
 
@@ -154,6 +163,21 @@ async def test_join_announcement_startup_probe_logs_failure(
 
     assert join_announcements.probe_calls == 1
     assert "Join announcement startup TTS probe failed" in caplog.messages
+
+
+async def test_join_announcement_startup_probe_logs_unexpected_error(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    join_announcements = FakeJoinAnnouncements(
+        enabled=True,
+        probe_error=RuntimeError("tts exploded"),
+    )
+    caplog.set_level(logging.INFO, logger=app.LOGGER.name)
+
+    await app._log_join_announcement_startup_probe(join_announcements)
+
+    assert join_announcements.probe_calls == 1
+    assert "Join announcement startup TTS probe failed with unexpected error" in caplog.messages
 
 
 async def test_join_announcement_startup_probe_logs_skip_when_disabled(

@@ -96,7 +96,13 @@ async def _log_join_announcement_startup_probe(
         )
         return
 
-    if await join_announcements.probe_startup_synthesis():
+    try:
+        passed = await join_announcements.probe_startup_synthesis()
+    except Exception:
+        LOGGER.exception("Join announcement startup TTS probe failed with unexpected error")
+        return
+
+    if passed:
         LOGGER.info("Join announcement startup TTS probe passed")
     else:
         LOGGER.error("Join announcement startup TTS probe failed")
