@@ -57,6 +57,7 @@ services:
           - lofi-postgres
           - postgres
           - db
+      join-tts:
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U lofi -d lofi"]
       interval: 10s
@@ -69,3 +70,6 @@ volumes:
 
 networks:
   default:
+  join-tts:
+    name: ${BGM_JOIN_TTS_NETWORK:-voicevox-discord-tts}
+    external: true
