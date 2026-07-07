@@ -9,6 +9,10 @@ import discord
 from lofi_bot.features.catalog.models import Track
 from lofi_bot.features.catalog.repository import CatalogRepository
 from lofi_bot.features.guild_settings.repository import GuildSettingsRepository
+from lofi_bot.features.playback.announcement_mixer import (
+    AnnouncementMixerAudioSource,
+    UnsupportedAnnouncementAudioError,
+)
 
 LOGGER = logging.getLogger(__name__)
 TrackChangedCallback = Callable[[int], Awaitable[None]]
@@ -65,7 +69,9 @@ class GuildPlayer:
     def set_volume(self, volume: float) -> None:
         self._volume = clamp_volume(volume)
         source = getattr(self.voice_client, "source", None)
-        if isinstance(source, discord.PCMVolumeTransformer):
+        if isinstance(source, AnnouncementMixerAudioSource):
+            source.set_base_volume(self._volume)
+        elif isinstance(source, discord.PCMVolumeTransformer):
             source.volume = self._volume
 
     def set_track_changed_callback(self, callback: TrackChangedCallback | None) -> None:
@@ -97,6 +103,25 @@ class GuildPlayer:
             self._notify_track_changed()
             return True
         return False
+
+    def can_accept_announcement(self) -> bool:
+        if not self.is_active or not self.voice_client.is_playing():
+            return False
+        source = getattr(self.voice_client, "source", None)
+        return isinstance(source, AnnouncementMixerAudioSource) and source.can_accept()
+
+    async def enqueue_announcement(self, audio_data: bytes) -> bool:
+        if not self.is_active or not self.voice_client.is_playing():
+            return False
+        source = getattr(self.voice_client, "source", None)
+        if not isinstance(source, AnnouncementMixerAudioSource) or not source.can_accept():
+            return False
+        try:
+            enqueued = await asyncio.to_thread(source.enqueue_audio, audio_data)
+        except UnsupportedAnnouncementAudioError:
+            LOGGER.exception("Unsupported announcement audio guild=%s", self.guild_id)
+            return False
+        return enqueued
 
     async def stop(self) -> None:
         self._stopped = True
@@ -202,7 +227,9 @@ class GuildPlayer:
             before_options=before_options,
             options="-vn",
         )
-        return discord.PCMVolumeTransformer(audio, volume=self._volume)
+        return AnnouncementMixerAudioSource(
+            discord.PCMVolumeTransformer(audio, volume=self._volume),
+        )
 
     def _after_play(self, track: Track):
         loop = asyncio.get_running_loop()

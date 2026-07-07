@@ -123,6 +123,18 @@ class PlayerManager:
             return False
         return await player.toggle_pause()
 
+    async def enqueue_announcement(self, guild_id: int, audio_data: bytes) -> bool:
+        player = self._players.get(guild_id)
+        if player is None or not player.is_active:
+            return False
+        return await player.enqueue_announcement(audio_data)
+
+    def can_accept_announcement(self, guild_id: int) -> bool:
+        player = self._players.get(guild_id)
+        if player is None:
+            return False
+        return player.can_accept_announcement()
+
     async def set_volume(self, guild_id: int, volume: float) -> bool:
         volume = clamp_volume(volume)
         await self._guild_settings.update_volume(guild_id, volume)

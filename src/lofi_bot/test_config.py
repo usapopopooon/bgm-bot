@@ -23,6 +23,8 @@ def test_load_settings_uses_explicit_database_url(monkeypatch: pytest.MonkeyPatc
 
     assert settings.database_url == "postgresql://user:password@example:5432/app"
     assert settings.default_category == "chill"
+    assert settings.join_tts_api_url == ""
+    assert settings.join_tts_api_token == ""
 
 
 def test_load_settings_ignores_default_category_env(monkeypatch: pytest.MonkeyPatch) -> None:

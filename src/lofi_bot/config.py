@@ -65,6 +65,8 @@ class Settings:
     jamendo_limit_per_category: int
     discord_guild_id: int | None
     sync_commands: bool
+    join_tts_api_url: str
+    join_tts_api_token: str
 
 
 def load_settings() -> Settings:
@@ -78,4 +80,6 @@ def load_settings() -> Settings:
         jamendo_limit_per_category=int(os.getenv("JAMENDO_LIMIT_PER_CATEGORY", "200")),
         discord_guild_id=_optional_int("DISCORD_GUILD_ID"),
         sync_commands=_bool("SYNC_COMMANDS", True),
+        join_tts_api_url=os.getenv("BGM_JOIN_TTS_API_URL", "").strip(),
+        join_tts_api_token=os.getenv("BGM_JOIN_TTS_API_TOKEN", "").strip(),
     )

@@ -98,13 +98,23 @@ async def test_shutdown_runtime_attempts_all_steps_when_one_fails() -> None:
         async def close_all(self) -> None:
             calls.append("players")
 
+    class FakeJoinAnnouncements:
+        async def close(self) -> None:
+            calls.append("announcements")
+
     async def run_until_closed() -> None:
         await bot.closed.wait()
         calls.append("bot")
 
     bot_task = asyncio.create_task(run_until_closed())
 
-    await app._shutdown_runtime(FakeScheduler(), FakePlayerManager(), bot, bot_task)
+    await app._shutdown_runtime(
+        FakeScheduler(),
+        FakePlayerManager(),
+        FakeJoinAnnouncements(),
+        bot,
+        bot_task,
+    )
 
     assert bot.shutdown_started is True
-    assert calls == ["scheduler", "players", "bot"]
+    assert calls == ["scheduler", "announcements", "players", "bot"]

@@ -81,6 +81,8 @@ class FakePlayerManager:
         self.left = True
         self.external_disconnect_calls: list[int] = []
         self.externally_disconnected = True
+        self.announcements: list[tuple[int, bytes]] = []
+        self.accepts_announcement = True
 
     def set_track_changed_callback(self, callback) -> None:  # noqa: ANN001
         self.track_changed_callback = callback
@@ -123,6 +125,13 @@ class FakePlayerManager:
         self.external_disconnect_calls.append(guild_id)
         return self.externally_disconnected
 
+    async def enqueue_announcement(self, guild_id: int, audio_data: bytes) -> bool:
+        self.announcements.append((guild_id, audio_data))
+        return True
+
+    def can_accept_announcement(self, guild_id: int) -> bool:
+        return self.accepts_announcement
+
     def current_track(self, guild_id: int):
         return None
 
@@ -136,6 +145,17 @@ class FakeScheduler:
 
     def start(self) -> None:
         self.started = True
+
+
+class FakeJoinAnnouncements:
+    def __init__(self, *, enabled: bool = True, audio_data: bytes | None = b"wav") -> None:
+        self.is_enabled = enabled
+        self.audio_data = audio_data
+        self.calls: list[str] = []
+
+    async def synthesize_join(self, guild_id: int, display_name: str) -> bytes | None:
+        self.calls.append(f"{guild_id}:{display_name}")
+        return self.audio_data
 
 
 class FakeGuild:
@@ -195,6 +215,7 @@ class FakeVoiceMember:
         self.guild = guild
         self.bot = bot
         self.id = member_id
+        self.display_name = "User"
 
 
 class FakeMemberVoice:
@@ -479,6 +500,70 @@ async def test_voice_state_update_checks_leave_when_member_leaves_bot_channel() 
     )
 
     assert player_manager.leave_if_alone_calls == [guild.id]
+
+
+async def test_voice_state_update_announces_member_joining_bot_channel() -> None:
+    bot_channel = FakeVoiceChannel(456)
+    guild = FakeGuild(123, voice_client=FakeBotVoiceClient(bot_channel))
+    player_manager = FakePlayerManager()
+    join_announcements = FakeJoinAnnouncements(audio_data=b"announcement-wav")
+    member = FakeVoiceMember(guild, member_id=789)
+    member.display_name = "Alice"
+    bot = object.__new__(LofiDiscordBot)
+    bot.player_manager = player_manager
+    bot.join_announcements = join_announcements
+
+    await LofiDiscordBot.on_voice_state_update(
+        bot,
+        member,
+        FakeVoiceState(None),
+        FakeVoiceState(bot_channel),
+    )
+
+    assert join_announcements.calls == ["123:Alice"]
+    assert player_manager.announcements == [(guild.id, b"announcement-wav")]
+    assert player_manager.leave_if_alone_calls == []
+
+
+async def test_voice_state_update_skips_join_announcement_when_disabled() -> None:
+    bot_channel = FakeVoiceChannel(456)
+    guild = FakeGuild(123, voice_client=FakeBotVoiceClient(bot_channel))
+    player_manager = FakePlayerManager()
+    join_announcements = FakeJoinAnnouncements(enabled=False)
+    bot = object.__new__(LofiDiscordBot)
+    bot.player_manager = player_manager
+    bot.join_announcements = join_announcements
+
+    await LofiDiscordBot.on_voice_state_update(
+        bot,
+        FakeVoiceMember(guild),
+        FakeVoiceState(None),
+        FakeVoiceState(bot_channel),
+    )
+
+    assert join_announcements.calls == []
+    assert player_manager.announcements == []
+
+
+async def test_voice_state_update_skips_join_announcement_when_player_queue_full() -> None:
+    bot_channel = FakeVoiceChannel(456)
+    guild = FakeGuild(123, voice_client=FakeBotVoiceClient(bot_channel))
+    player_manager = FakePlayerManager()
+    player_manager.accepts_announcement = False
+    join_announcements = FakeJoinAnnouncements()
+    bot = object.__new__(LofiDiscordBot)
+    bot.player_manager = player_manager
+    bot.join_announcements = join_announcements
+
+    await LofiDiscordBot.on_voice_state_update(
+        bot,
+        FakeVoiceMember(guild),
+        FakeVoiceState(None),
+        FakeVoiceState(bot_channel),
+    )
+
+    assert join_announcements.calls == []
+    assert player_manager.announcements == []
 
 
 async def test_voice_state_update_treats_self_disconnect_like_manual_leave(monkeypatch) -> None:

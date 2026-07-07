@@ -16,6 +16,7 @@ from lofi_bot.features.catalog.scheduler import CatalogRefreshScheduler
 from lofi_bot.features.catalog.service import CatalogService
 from lofi_bot.features.discord_ui.bot import LofiDiscordBot
 from lofi_bot.features.guild_settings.repository import GuildSettingsRepository
+from lofi_bot.features.join_announcements.client import JoinAnnouncementClient
 from lofi_bot.features.playback.manager import PlayerManager
 
 LOGGER = logging.getLogger(__name__)
@@ -52,11 +53,16 @@ async def run() -> None:
                 default_category=settings.default_category,
                 catalog_service=catalog_service,
             )
+            join_announcements = JoinAnnouncementClient(
+                settings.join_tts_api_url,
+                api_token=settings.join_tts_api_token,
+            )
             bot = LofiDiscordBot(
                 settings=settings,
                 guild_settings=guild_settings_repository,
                 player_manager=player_manager,
                 scheduler=scheduler,
+                join_announcements=join_announcements,
             )
 
             shutdown_event = asyncio.Event()
@@ -67,7 +73,13 @@ async def run() -> None:
                 await _wait_for_bot_or_shutdown(bot_task, shutdown_event)
             finally:
                 try:
-                    await _shutdown_runtime(scheduler, player_manager, bot, bot_task)
+                    await _shutdown_runtime(
+                        scheduler,
+                        player_manager,
+                        join_announcements,
+                        bot,
+                        bot_task,
+                    )
                 finally:
                     remove_signal_handlers()
     finally:
@@ -172,11 +184,13 @@ async def _close_discord_bot(
 async def _shutdown_runtime(
     scheduler: CatalogRefreshScheduler,
     player_manager: PlayerManager,
+    join_announcements: JoinAnnouncementClient,
     bot: LofiDiscordBot,
     bot_task: asyncio.Task[None],
 ) -> None:
     bot.begin_shutdown()
     await _run_shutdown_step("stop catalog scheduler", scheduler.stop)
+    await _run_shutdown_step("close join announcements", join_announcements.close)
     await _run_shutdown_step("disconnect voice clients", player_manager.close_all)
     await _run_shutdown_step("close Discord bot", lambda: _close_discord_bot(bot, bot_task))
 
