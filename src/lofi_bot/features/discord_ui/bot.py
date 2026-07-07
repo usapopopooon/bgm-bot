@@ -157,6 +157,13 @@ class LofiDiscordBot(commands.Bot):
                 callback=self._member_commands_command,
             )
         )
+        self.tree.add_command(
+            app_commands.Command(
+                name="voice_event_sounds",
+                description="入退室音を切り替えます",
+                callback=self._voice_event_sounds_command,
+            )
+        )
         if self.settings.sync_commands:
             await self._sync_commands()
 
@@ -200,6 +207,12 @@ class LofiDiscordBot(commands.Bot):
         if join_announcements is None or not join_announcements.is_enabled:
             return
         if not self.player_manager.can_accept_announcement(member.guild.id):
+            return
+        settings = await self.guild_settings.get_or_create(
+            member.guild.id,
+            self.settings.default_category,
+        )
+        if not settings.voice_event_sounds_enabled:
             return
         display_name = getattr(member, "display_name", None) or getattr(member, "name", "")
         audio_data = await join_announcements.synthesize_join(member.guild.id, display_name)
@@ -750,19 +763,32 @@ class LofiDiscordBot(commands.Bot):
             player_manager=self.player_manager,
             default_category=self.settings.default_category,
         )
+        settings = await self.guild_settings.get_or_create(
+            interaction.guild.id,
+            self.settings.default_category,
+        )
         message = await interaction.followup.send(
             embed=embed,
-            view=self._build_control_view(interaction.guild.id),
+            view=self._build_control_view(
+                interaction.guild.id,
+                voice_event_sounds_enabled=settings.voice_event_sounds_enabled,
+            ),
             wait=True,
         )
         await self.guild_settings.update_panel(interaction.guild.id, message.channel.id, message.id)
 
-    def _build_control_view(self, guild_id: int | None = None) -> PlayerControlView:
+    def _build_control_view(
+        self,
+        guild_id: int | None = None,
+        *,
+        voice_event_sounds_enabled: bool | None = None,
+    ) -> PlayerControlView:
         return PlayerControlView(
             self.guild_settings,
             self.player_manager,
             default_category=self.settings.default_category,
             is_paused=(guild_id is not None and self.player_manager.is_paused(guild_id)),
+            voice_event_sounds_enabled=voice_event_sounds_enabled,
         )
 
     @app_commands.describe(percent="1〜100の音量")
@@ -845,6 +871,22 @@ class LofiDiscordBot(commands.Bot):
         message = f"メンバーのコマンド利用を {'ON' if enabled else 'OFF'} にしました。"
         await interaction.response.send_message(message, ephemeral=True)
 
+    async def _voice_event_sounds_command(self, interaction: discord.Interaction) -> None:
+        if interaction.guild is None:
+            await interaction.response.send_message("サーバー内で使ってください。", ephemeral=True)
+            return
+
+        settings = await self.guild_settings.get_or_create(
+            interaction.guild.id,
+            self.settings.default_category,
+        )
+        enabled = not settings.voice_event_sounds_enabled
+        await self.guild_settings.update_voice_event_sounds_enabled(interaction.guild.id, enabled)
+
+        message = f"入退室音を {'ON' if enabled else 'OFF'} にしました。"
+        await interaction.response.send_message(message, ephemeral=True)
+        await self._refresh_panel_message(interaction.guild.id)
+
     async def _refresh_panel_message(self, guild_id: int) -> None:
         settings = await self.guild_settings.get_or_create(
             guild_id,
@@ -872,7 +914,10 @@ class LofiDiscordBot(commands.Bot):
             )
             await message.edit(
                 embed=embed,
-                view=self._build_control_view(guild_id),
+                view=self._build_control_view(
+                    guild_id,
+                    voice_event_sounds_enabled=settings.voice_event_sounds_enabled,
+                ),
             )
         except discord.NotFound:
             LOGGER.warning("Panel message not found guild=%s", guild_id)

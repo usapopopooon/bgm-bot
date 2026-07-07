@@ -16,6 +16,7 @@ class FakeGuildSettingsRepository:
         self.list_calls = 0
         self.panel_updates: list[tuple[int, int, int]] = []
         self.member_command_updates: list[tuple[int, bool]] = []
+        self.voice_event_sound_updates: list[tuple[int, bool]] = []
 
     async def list_stay_connected(self) -> list[GuildSettings]:
         self.list_calls += 1
@@ -62,6 +63,33 @@ class FakeGuildSettingsRepository:
                 panel_channel_id=None,
                 panel_message_id=None,
                 member_commands_enabled=member_commands_enabled,
+            )
+        )
+
+    async def update_voice_event_sounds_enabled(
+        self,
+        guild_id: int,
+        voice_event_sounds_enabled: bool,
+    ) -> None:
+        self.voice_event_sound_updates.append((guild_id, voice_event_sounds_enabled))
+        for index, settings in enumerate(self._settings):
+            if settings.guild_id == guild_id:
+                self._settings[index] = replace(
+                    settings,
+                    voice_event_sounds_enabled=voice_event_sounds_enabled,
+                )
+                return
+
+        self._settings.append(
+            GuildSettings(
+                guild_id=guild_id,
+                voice_channel_id=None,
+                selected_category="chill",
+                volume=0.01,
+                stay_connected=False,
+                panel_channel_id=None,
+                panel_message_id=None,
+                voice_event_sounds_enabled=voice_event_sounds_enabled,
             )
         )
 
@@ -293,6 +321,7 @@ def _guild_settings(
     guild_id: int = 123,
     *,
     member_commands_enabled: bool = False,
+    voice_event_sounds_enabled: bool = False,
 ) -> GuildSettings:
     return GuildSettings(
         guild_id=guild_id,
@@ -303,6 +332,7 @@ def _guild_settings(
         panel_channel_id=None,
         panel_message_id=None,
         member_commands_enabled=member_commands_enabled,
+        voice_event_sounds_enabled=voice_event_sounds_enabled,
     )
 
 
@@ -313,6 +343,19 @@ def _set_member_command_access(
 ) -> FakeGuildSettingsRepository:
     guild_settings = FakeGuildSettingsRepository(
         [_guild_settings(member_commands_enabled=member_commands_enabled)]
+    )
+    bot.guild_settings = guild_settings
+    bot.settings = _fake_settings()
+    return guild_settings
+
+
+def _set_voice_event_sounds_access(
+    bot: LofiDiscordBot,
+    *,
+    voice_event_sounds_enabled: bool = False,
+) -> FakeGuildSettingsRepository:
+    guild_settings = FakeGuildSettingsRepository(
+        [_guild_settings(voice_event_sounds_enabled=voice_event_sounds_enabled)]
     )
     bot.guild_settings = guild_settings
     bot.settings = _fake_settings()
@@ -463,7 +506,14 @@ async def test_setup_hook_registers_commands_without_panel() -> None:
         await bot.setup_hook()
 
         command_names = [command.name for command in bot.tree.get_commands()]
-        assert command_names == ["play", "volume", "stay", "leave", "member_commands"]
+        assert command_names == [
+            "play",
+            "volume",
+            "stay",
+            "leave",
+            "member_commands",
+            "voice_event_sounds",
+        ]
     finally:
         await bot.close()
 
@@ -512,6 +562,7 @@ async def test_voice_state_update_announces_member_joining_bot_channel() -> None
     bot = object.__new__(LofiDiscordBot)
     bot.player_manager = player_manager
     bot.join_announcements = join_announcements
+    _set_voice_event_sounds_access(bot, voice_event_sounds_enabled=True)
 
     await LofiDiscordBot.on_voice_state_update(
         bot,
@@ -523,6 +574,29 @@ async def test_voice_state_update_announces_member_joining_bot_channel() -> None
     assert join_announcements.calls == ["123:Alice"]
     assert player_manager.announcements == [(guild.id, b"announcement-wav")]
     assert player_manager.leave_if_alone_calls == []
+
+
+async def test_voice_state_update_skips_join_announcement_by_default() -> None:
+    bot_channel = FakeVoiceChannel(456)
+    guild = FakeGuild(123, voice_client=FakeBotVoiceClient(bot_channel))
+    player_manager = FakePlayerManager()
+    join_announcements = FakeJoinAnnouncements(audio_data=b"announcement-wav")
+    member = FakeVoiceMember(guild, member_id=789)
+    member.display_name = "Alice"
+    bot = object.__new__(LofiDiscordBot)
+    bot.player_manager = player_manager
+    bot.join_announcements = join_announcements
+    _set_voice_event_sounds_access(bot)
+
+    await LofiDiscordBot.on_voice_state_update(
+        bot,
+        member,
+        FakeVoiceState(None),
+        FakeVoiceState(bot_channel),
+    )
+
+    assert join_announcements.calls == []
+    assert player_manager.announcements == []
 
 
 async def test_voice_state_update_skips_join_announcement_when_disabled() -> None:
@@ -1248,6 +1322,11 @@ def test_member_switchable_commands_are_not_discord_admin_locked() -> None:
             description="VCから退出します",
             callback=bot._leave_command,
         ),
+        bot_module.app_commands.Command(
+            name="voice_event_sounds",
+            description="入退室音を切り替えます",
+            callback=bot._voice_event_sounds_command,
+        ),
     ]
     member_commands = bot_module.app_commands.Command(
         name="member_commands",
@@ -1562,6 +1641,48 @@ async def test_member_commands_command_turns_off_for_admin() -> None:
     assert guild_settings.member_command_updates == [(123, False)]
     assert interaction.response.messages == [
         ("メンバーのコマンド利用を OFF にしました。", True),
+    ]
+
+
+async def test_voice_event_sounds_command_turns_on_for_member() -> None:
+    bot = object.__new__(LofiDiscordBot)
+    guild_settings = _set_voice_event_sounds_access(bot)
+    interaction = FakeInteraction(guild_id=123, administrator=False)
+
+    await LofiDiscordBot._voice_event_sounds_command(bot, interaction)
+
+    assert guild_settings.voice_event_sound_updates == [(123, True)]
+    assert interaction.response.messages == [
+        ("入退室音を ON にしました。", True),
+    ]
+
+
+async def test_voice_event_sounds_command_rejects_dm() -> None:
+    bot = object.__new__(LofiDiscordBot)
+    guild_settings = _set_voice_event_sounds_access(bot)
+    interaction = FakeInteraction(guild_id=None, administrator=False)
+
+    await LofiDiscordBot._voice_event_sounds_command(bot, interaction)
+
+    assert guild_settings.voice_event_sound_updates == []
+    assert interaction.response.messages == [
+        ("サーバー内で使ってください。", True),
+    ]
+
+
+async def test_voice_event_sounds_command_turns_off_for_member() -> None:
+    bot = object.__new__(LofiDiscordBot)
+    guild_settings = _set_voice_event_sounds_access(
+        bot,
+        voice_event_sounds_enabled=True,
+    )
+    interaction = FakeInteraction(guild_id=123, administrator=False)
+
+    await LofiDiscordBot._voice_event_sounds_command(bot, interaction)
+
+    assert guild_settings.voice_event_sound_updates == [(123, False)]
+    assert interaction.response.messages == [
+        ("入退室音を OFF にしました。", True),
     ]
 
 

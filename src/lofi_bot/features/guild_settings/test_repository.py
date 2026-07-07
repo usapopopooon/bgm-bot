@@ -47,3 +47,17 @@ async def test_update_member_commands_enabled_upserts_setting() -> None:
     assert "ON CONFLICT (guild_id) DO UPDATE" in query
     assert "member_commands_enabled = EXCLUDED.member_commands_enabled" in query
     assert args == (123, True)
+
+
+async def test_update_voice_event_sounds_enabled_upserts_setting() -> None:
+    pool = FakePool()
+    repository = GuildSettingsRepository(pool)
+
+    await repository.update_voice_event_sounds_enabled(123, True)
+
+    query, args = pool.execute_calls[0]
+    assert "INSERT INTO guild_settings" in query
+    assert "voice_event_sounds_enabled" in query
+    assert "ON CONFLICT (guild_id) DO UPDATE" in query
+    assert "voice_event_sounds_enabled = EXCLUDED.voice_event_sounds_enabled" in query
+    assert args == (123, True)

@@ -79,6 +79,7 @@ class Database:
                     volume REAL NOT NULL DEFAULT 0.01,
                     stay_connected BOOLEAN NOT NULL DEFAULT FALSE,
                     member_commands_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+                    voice_event_sounds_enabled BOOLEAN NOT NULL DEFAULT FALSE,
                     panel_channel_id BIGINT,
                     panel_message_id BIGINT,
                     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -92,6 +93,10 @@ class Database:
 
                 ALTER TABLE guild_settings
                     ADD COLUMN IF NOT EXISTS member_commands_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+
+                ALTER TABLE guild_settings
+                    ADD COLUMN IF NOT EXISTS voice_event_sounds_enabled
+                    BOOLEAN NOT NULL DEFAULT FALSE;
 
                 UPDATE guild_settings
                 SET selected_category = 'chill',

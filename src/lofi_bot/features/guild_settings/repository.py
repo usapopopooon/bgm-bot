@@ -15,6 +15,7 @@ class GuildSettings:
     panel_channel_id: int | None
     panel_message_id: int | None
     member_commands_enabled: bool = False
+    voice_event_sounds_enabled: bool = False
 
 
 class GuildSettingsRepository:
@@ -113,6 +114,23 @@ class GuildSettingsRepository:
             member_commands_enabled,
         )
 
+    async def update_voice_event_sounds_enabled(
+        self,
+        guild_id: int,
+        voice_event_sounds_enabled: bool,
+    ) -> None:
+        await self._pool.execute(
+            """
+            INSERT INTO guild_settings (guild_id, voice_event_sounds_enabled)
+            VALUES ($1, $2)
+            ON CONFLICT (guild_id) DO UPDATE
+            SET voice_event_sounds_enabled = EXCLUDED.voice_event_sounds_enabled,
+                updated_at = now()
+            """,
+            guild_id,
+            voice_event_sounds_enabled,
+        )
+
     async def list_stay_connected(self) -> list[GuildSettings]:
         rows = await self._pool.fetch(
             """
@@ -155,4 +173,5 @@ class GuildSettingsRepository:
             panel_channel_id=row["panel_channel_id"],
             panel_message_id=row["panel_message_id"],
             member_commands_enabled=row["member_commands_enabled"],
+            voice_event_sounds_enabled=row["voice_event_sounds_enabled"],
         )

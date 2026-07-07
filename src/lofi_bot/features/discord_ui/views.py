@@ -34,9 +34,16 @@ class PauseButton(discord.ui.Button):
         )
         if not toggled:
             embed.description = "再生中ではありません。VCに入って `/play` を使ってください。"
+        settings = await self.view.guild_settings.get_or_create(
+            interaction.guild.id,
+            self.view.default_category,
+        )
         await interaction.response.edit_message(
             embed=embed,
-            view=self.view.with_current_state(interaction.guild.id),
+            view=self.view.with_current_state(
+                interaction.guild.id,
+                voice_event_sounds_enabled=settings.voice_event_sounds_enabled,
+            ),
         )
 
 
@@ -63,9 +70,61 @@ class NextTrackButton(discord.ui.Button):
         )
         if not skipped:
             embed.description = "再生中ではありません。VCに入って `/play` を使ってください。"
+        settings = await self.view.guild_settings.get_or_create(
+            interaction.guild.id,
+            self.view.default_category,
+        )
         await interaction.response.edit_message(
             embed=embed,
-            view=self.view.with_current_state(interaction.guild.id),
+            view=self.view.with_current_state(
+                interaction.guild.id,
+                voice_event_sounds_enabled=settings.voice_event_sounds_enabled,
+            ),
+        )
+
+
+class VoiceEventSoundsButton(discord.ui.Button):
+    def __init__(self, *, enabled: bool | None) -> None:
+        if enabled is None:
+            label = "入退室音"
+            style = discord.ButtonStyle.secondary
+        else:
+            label = f"入退室音 {'ON' if enabled else 'OFF'}"
+            style = discord.ButtonStyle.success if enabled else discord.ButtonStyle.secondary
+
+        super().__init__(
+            label=label,
+            style=style,
+            custom_id="lofi_bot:voice_event_sounds",
+            row=1,
+        )
+
+    async def callback(self, interaction: discord.Interaction) -> None:
+        if interaction.guild is None or not isinstance(self.view, PlayerControlView):
+            await interaction.response.send_message("サーバー内で使ってください。", ephemeral=True)
+            return
+
+        settings = await self.view.guild_settings.get_or_create(
+            interaction.guild.id,
+            self.view.default_category,
+        )
+        enabled = not settings.voice_event_sounds_enabled
+        await self.view.guild_settings.update_voice_event_sounds_enabled(
+            interaction.guild.id,
+            enabled,
+        )
+        embed = await build_panel_embed(
+            guild_id=interaction.guild.id,
+            guild_settings=self.view.guild_settings,
+            player_manager=self.view.player_manager,
+            default_category=self.view.default_category,
+        )
+        await interaction.response.edit_message(
+            embed=embed,
+            view=self.view.with_current_state(
+                interaction.guild.id,
+                voice_event_sounds_enabled=enabled,
+            ),
         )
 
 
@@ -76,20 +135,33 @@ class PlayerControlView(discord.ui.View):
         player_manager: PlayerManager,
         default_category: str = DEFAULT_CATEGORY,
         is_paused: bool = False,
+        voice_event_sounds_enabled: bool | None = None,
     ) -> None:
         super().__init__(timeout=None)
         self.guild_settings = guild_settings
         self.player_manager = player_manager
         self.default_category = default_category
+        self.voice_event_sounds_enabled = voice_event_sounds_enabled
         self.add_item(PauseButton(is_paused=is_paused))
         self.add_item(NextTrackButton())
+        self.add_item(VoiceEventSoundsButton(enabled=voice_event_sounds_enabled))
 
-    def with_current_state(self, guild_id: int) -> PlayerControlView:
+    def with_current_state(
+        self,
+        guild_id: int,
+        *,
+        voice_event_sounds_enabled: bool | None = None,
+    ) -> PlayerControlView:
         return PlayerControlView(
             self.guild_settings,
             self.player_manager,
             default_category=self.default_category,
             is_paused=self.player_manager.is_paused(guild_id),
+            voice_event_sounds_enabled=(
+                self.voice_event_sounds_enabled
+                if voice_event_sounds_enabled is None
+                else voice_event_sounds_enabled
+            ),
         )
 
 
