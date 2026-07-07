@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from contextlib import suppress
 from dataclasses import replace
 from datetime import timedelta
@@ -176,13 +177,22 @@ class FakeScheduler:
 
 
 class FakeJoinAnnouncements:
-    def __init__(self, *, enabled: bool = True, audio_data: bytes | None = b"wav") -> None:
+    def __init__(
+        self,
+        *,
+        enabled: bool = True,
+        audio_data: bytes | None = b"wav",
+        error: Exception | None = None,
+    ) -> None:
         self.is_enabled = enabled
         self.audio_data = audio_data
+        self.error = error
         self.calls: list[str] = []
 
     async def synthesize_join(self, guild_id: int, display_name: str) -> bytes | None:
         self.calls.append(f"{guild_id}:{display_name}")
+        if self.error is not None:
+            raise self.error
         return self.audio_data
 
 
@@ -597,6 +607,33 @@ async def test_voice_state_update_skips_join_announcement_by_default() -> None:
 
     assert join_announcements.calls == []
     assert player_manager.announcements == []
+
+
+async def test_voice_state_update_logs_join_announcement_tts_error(
+    caplog,
+) -> None:
+    bot_channel = FakeVoiceChannel(456)
+    guild = FakeGuild(123, voice_client=FakeBotVoiceClient(bot_channel))
+    player_manager = FakePlayerManager()
+    join_announcements = FakeJoinAnnouncements(error=RuntimeError("tts failed"))
+    member = FakeVoiceMember(guild, member_id=789)
+    member.display_name = "Alice"
+    bot = object.__new__(LofiDiscordBot)
+    bot.player_manager = player_manager
+    bot.join_announcements = join_announcements
+    _set_voice_event_sounds_access(bot, voice_event_sounds_enabled=True)
+    caplog.set_level(logging.ERROR, logger=bot_module.LOGGER.name)
+
+    await LofiDiscordBot.on_voice_state_update(
+        bot,
+        member,
+        FakeVoiceState(None),
+        FakeVoiceState(bot_channel),
+    )
+
+    assert join_announcements.calls == ["123:Alice"]
+    assert player_manager.announcements == []
+    assert "Join announcement TTS failed unexpectedly guild=123 member=789" in caplog.messages
 
 
 async def test_voice_state_update_skips_join_announcement_when_disabled() -> None:

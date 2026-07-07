@@ -215,7 +215,15 @@ class LofiDiscordBot(commands.Bot):
         if not settings.voice_event_sounds_enabled:
             return
         display_name = getattr(member, "display_name", None) or getattr(member, "name", "")
-        audio_data = await join_announcements.synthesize_join(member.guild.id, display_name)
+        try:
+            audio_data = await join_announcements.synthesize_join(member.guild.id, display_name)
+        except Exception:
+            LOGGER.exception(
+                "Join announcement TTS failed unexpectedly guild=%s member=%s",
+                member.guild.id,
+                member.id,
+            )
+            return
         if audio_data is None:
             return
         announced = await self.player_manager.enqueue_announcement(member.guild.id, audio_data)
