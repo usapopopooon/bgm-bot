@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from contextlib import suppress
 
 import pytest
@@ -20,6 +21,17 @@ class FakeBot:
     async def close(self) -> None:
         self.close_calls += 1
         self.closed.set()
+
+
+class FakeJoinAnnouncements:
+    def __init__(self, *, enabled: bool, probe_result: bool = True) -> None:
+        self.is_enabled = enabled
+        self.probe_result = probe_result
+        self.probe_calls = 0
+
+    async def probe_startup_synthesis(self) -> bool:
+        self.probe_calls += 1
+        return self.probe_result
 
 
 async def test_wait_for_bot_or_shutdown_returns_when_shutdown_is_requested() -> None:
@@ -118,3 +130,42 @@ async def test_shutdown_runtime_attempts_all_steps_when_one_fails() -> None:
 
     assert bot.shutdown_started is True
     assert calls == ["scheduler", "announcements", "players", "bot"]
+
+
+async def test_join_announcement_startup_probe_logs_success(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    join_announcements = FakeJoinAnnouncements(enabled=True, probe_result=True)
+    caplog.set_level(logging.INFO, logger=app.LOGGER.name)
+
+    await app._log_join_announcement_startup_probe(join_announcements)
+
+    assert join_announcements.probe_calls == 1
+    assert "Join announcement startup TTS probe passed" in caplog.messages
+
+
+async def test_join_announcement_startup_probe_logs_failure(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    join_announcements = FakeJoinAnnouncements(enabled=True, probe_result=False)
+    caplog.set_level(logging.INFO, logger=app.LOGGER.name)
+
+    await app._log_join_announcement_startup_probe(join_announcements)
+
+    assert join_announcements.probe_calls == 1
+    assert "Join announcement startup TTS probe failed" in caplog.messages
+
+
+async def test_join_announcement_startup_probe_logs_skip_when_disabled(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    join_announcements = FakeJoinAnnouncements(enabled=False)
+    caplog.set_level(logging.INFO, logger=app.LOGGER.name)
+
+    await app._log_join_announcement_startup_probe(join_announcements)
+
+    assert join_announcements.probe_calls == 0
+    assert (
+        "Join announcement startup TTS probe skipped; BGM_JOIN_TTS_API_URL is not configured"
+        in caplog.messages
+    )

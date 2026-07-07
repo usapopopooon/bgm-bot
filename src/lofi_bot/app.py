@@ -67,6 +67,7 @@ async def run() -> None:
 
             shutdown_event = asyncio.Event()
             remove_signal_handlers = _install_shutdown_signal_handlers(shutdown_event)
+            await _log_join_announcement_startup_probe(join_announcements)
             bot_task = asyncio.create_task(bot.start(settings.discord_token), name="discord-bot")
 
             try:
@@ -84,6 +85,21 @@ async def run() -> None:
                     remove_signal_handlers()
     finally:
         await database.close()
+
+
+async def _log_join_announcement_startup_probe(
+    join_announcements: JoinAnnouncementClient,
+) -> None:
+    if not join_announcements.is_enabled:
+        LOGGER.info(
+            "Join announcement startup TTS probe skipped; BGM_JOIN_TTS_API_URL is not configured"
+        )
+        return
+
+    if await join_announcements.probe_startup_synthesis():
+        LOGGER.info("Join announcement startup TTS probe passed")
+    else:
+        LOGGER.error("Join announcement startup TTS probe failed")
 
 
 def _install_shutdown_signal_handlers(shutdown_event: asyncio.Event) -> RemoveSignalHandlers:

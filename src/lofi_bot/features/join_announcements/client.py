@@ -10,6 +10,7 @@ LOGGER = logging.getLogger(__name__)
 JOIN_ANNOUNCEMENT_TIMEOUT_SECONDS = 5.0
 JOIN_ANNOUNCEMENT_MIN_INTERVAL_SECONDS = 2.0
 MAX_DISPLAY_NAME_LENGTH = 32
+STARTUP_PROBE_DISPLAY_NAME = "疎通確認"
 _WHITESPACE_PATTERN = re.compile(r"\s+")
 
 
@@ -50,11 +51,46 @@ class JoinAnnouncementClient:
         if not self._try_begin_request(guild_id):
             return None
 
-        payload = {
-            "guild_id": guild_id,
-            "text": build_join_announcement_text(display_name),
-            "cache": True,
-        }
+        try:
+            return await self._request_synthesis(
+                {
+                    "guild_id": guild_id,
+                    "text": build_join_announcement_text(display_name),
+                    "cache": True,
+                },
+                failure_context="Join announcement TTS",
+            )
+        finally:
+            self._in_flight_guilds.discard(guild_id)
+
+    async def probe_startup_synthesis(self) -> bool:
+        if not self.is_enabled:
+            return False
+
+        audio_data = await self._request_synthesis(
+            {
+                "text": build_join_announcement_text(STARTUP_PROBE_DISPLAY_NAME),
+                "cache": True,
+            },
+            failure_context="Join announcement startup TTS probe",
+        )
+        if not audio_data:
+            LOGGER.warning("Join announcement startup TTS probe returned empty audio")
+            return False
+        return True
+
+    async def _get_session(self) -> aiohttp.ClientSession:
+        if self._session is None or self._session.closed:
+            timeout = aiohttp.ClientTimeout(total=JOIN_ANNOUNCEMENT_TIMEOUT_SECONDS)
+            self._session = aiohttp.ClientSession(timeout=timeout)
+        return self._session
+
+    async def _request_synthesis(
+        self,
+        payload: dict[str, object],
+        *,
+        failure_context: str,
+    ) -> bytes | None:
         headers = {}
         if self._api_token:
             headers["Authorization"] = f"Bearer {self._api_token}"
@@ -67,20 +103,12 @@ class JoinAnnouncementClient:
                 headers=headers,
             ) as response:
                 if response.status >= 400:
-                    LOGGER.warning("Join announcement TTS failed status=%s", response.status)
+                    LOGGER.warning("%s failed status=%s", failure_context, response.status)
                     return None
                 return await response.read()
         except (aiohttp.ClientError, TimeoutError):
-            LOGGER.exception("Join announcement TTS request failed")
+            LOGGER.exception("%s request failed", failure_context)
             return None
-        finally:
-            self._in_flight_guilds.discard(guild_id)
-
-    async def _get_session(self) -> aiohttp.ClientSession:
-        if self._session is None or self._session.closed:
-            timeout = aiohttp.ClientTimeout(total=JOIN_ANNOUNCEMENT_TIMEOUT_SECONDS)
-            self._session = aiohttp.ClientSession(timeout=timeout)
-        return self._session
 
     def _try_begin_request(self, guild_id: int) -> bool:
         now = time.monotonic()

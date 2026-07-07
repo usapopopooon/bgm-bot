@@ -7,7 +7,9 @@ from lofi_bot.features.join_announcements.client import (
 
 
 class FakeResponse:
-    status = 200
+    def __init__(self, *, status: int = 200, body: bytes = b"wav") -> None:
+        self.status = status
+        self._body = body
 
     async def __aenter__(self) -> FakeResponse:
         return self
@@ -16,18 +18,19 @@ class FakeResponse:
         pass
 
     async def read(self) -> bytes:
-        return b"wav"
+        return self._body
 
 
 class FakeSession:
-    closed = False
-
-    def __init__(self) -> None:
+    def __init__(self, *, status: int = 200, body: bytes = b"wav") -> None:
+        self.closed = False
+        self._status = status
+        self._body = body
         self.calls: list[dict[str, object]] = []
 
     def post(self, url: str, **kwargs: object) -> FakeResponse:
         self.calls.append({"url": url, **kwargs})
-        return FakeResponse()
+        return FakeResponse(status=self._status, body=self._body)
 
     async def close(self) -> None:
         self.closed = True
@@ -56,3 +59,36 @@ async def test_synthesize_join_sends_guild_id_and_throttles_consecutive_calls() 
         "cache": True,
     }
     assert session.calls[0]["headers"] == {"Authorization": "Bearer secret"}
+
+
+async def test_probe_startup_synthesis_fetches_audio_without_guild_id() -> None:
+    session = FakeSession()
+    client = JoinAnnouncementClient("http://tts-api", api_token="secret")
+    client._session = session
+
+    assert await client.probe_startup_synthesis() is True
+
+    assert len(session.calls) == 1
+    assert session.calls[0]["url"] == "http://tts-api/synthesize"
+    assert session.calls[0]["json"] == {
+        "text": "疎通確認さんが入室しました",
+        "cache": True,
+    }
+    assert session.calls[0]["headers"] == {"Authorization": "Bearer secret"}
+
+
+async def test_probe_startup_synthesis_returns_false_when_disabled() -> None:
+    session = FakeSession()
+    client = JoinAnnouncementClient("")
+    client._session = session
+
+    assert await client.probe_startup_synthesis() is False
+    assert session.calls == []
+
+
+async def test_probe_startup_synthesis_returns_false_for_empty_audio() -> None:
+    session = FakeSession(body=b"")
+    client = JoinAnnouncementClient("http://tts-api")
+    client._session = session
+
+    assert await client.probe_startup_synthesis() is False
