@@ -3,6 +3,7 @@ from __future__ import annotations
 from lofi_bot.features.join_announcements.client import (
     JoinAnnouncementClient,
     build_join_announcement_text,
+    build_leave_announcement_text,
 )
 
 
@@ -41,6 +42,11 @@ def test_build_join_announcement_text_trims_long_names() -> None:
     assert build_join_announcement_text("") == "だれかさんが入室しました"
 
 
+def test_build_leave_announcement_text_trims_long_names() -> None:
+    assert build_leave_announcement_text("  Alice   Bob  ") == "Alice Bobさんが退室しました"
+    assert build_leave_announcement_text("") == "だれかさんが退室しました"
+
+
 async def test_synthesize_join_sends_guild_id_and_throttles_consecutive_calls() -> None:
     session = FakeSession()
     client = JoinAnnouncementClient("http://tts-api", api_token="secret")
@@ -56,6 +62,24 @@ async def test_synthesize_join_sends_guild_id_and_throttles_consecutive_calls() 
     assert session.calls[0]["json"] == {
         "guild_id": 123,
         "text": "Aliceさんが入室しました",
+        "cache": True,
+    }
+    assert session.calls[0]["headers"] == {"Authorization": "Bearer secret"}
+
+
+async def test_synthesize_leave_sends_leave_text() -> None:
+    session = FakeSession()
+    client = JoinAnnouncementClient("http://tts-api", api_token="secret")
+    client._session = session
+
+    audio_data = await client.synthesize_leave(123, "Alice")
+
+    assert audio_data == b"wav"
+    assert len(session.calls) == 1
+    assert session.calls[0]["url"] == "http://tts-api/synthesize"
+    assert session.calls[0]["json"] == {
+        "guild_id": 123,
+        "text": "Aliceさんが退室しました",
         "cache": True,
     }
     assert session.calls[0]["headers"] == {"Authorization": "Bearer secret"}

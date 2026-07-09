@@ -15,12 +15,20 @@ _WHITESPACE_PATTERN = re.compile(r"\s+")
 
 
 def build_join_announcement_text(display_name: str) -> str:
+    return _build_voice_event_announcement_text(display_name, "入室")
+
+
+def build_leave_announcement_text(display_name: str) -> str:
+    return _build_voice_event_announcement_text(display_name, "退室")
+
+
+def _build_voice_event_announcement_text(display_name: str, event_name: str) -> str:
     normalized = _WHITESPACE_PATTERN.sub(" ", display_name).strip()
     if not normalized:
         normalized = "だれか"
     if len(normalized) > MAX_DISPLAY_NAME_LENGTH:
         normalized = normalized[:MAX_DISPLAY_NAME_LENGTH]
-    return f"{normalized}さんが入室しました"
+    return f"{normalized}さんが{event_name}しました"
 
 
 class JoinAnnouncementClient:
@@ -46,6 +54,26 @@ class JoinAnnouncementClient:
             self._session = None
 
     async def synthesize_join(self, guild_id: int, display_name: str) -> bytes | None:
+        return await self._synthesize_voice_event(
+            guild_id,
+            build_join_announcement_text(display_name),
+            failure_context="Join announcement TTS",
+        )
+
+    async def synthesize_leave(self, guild_id: int, display_name: str) -> bytes | None:
+        return await self._synthesize_voice_event(
+            guild_id,
+            build_leave_announcement_text(display_name),
+            failure_context="Leave announcement TTS",
+        )
+
+    async def _synthesize_voice_event(
+        self,
+        guild_id: int,
+        announcement_text: str,
+        *,
+        failure_context: str,
+    ) -> bytes | None:
         if not self.is_enabled:
             return None
         if not self._try_begin_request(guild_id):
@@ -55,10 +83,10 @@ class JoinAnnouncementClient:
             return await self._request_synthesis(
                 {
                     "guild_id": guild_id,
-                    "text": build_join_announcement_text(display_name),
+                    "text": announcement_text,
                     "cache": True,
                 },
-                failure_context="Join announcement TTS",
+                failure_context=failure_context,
             )
         finally:
             self._in_flight_guilds.discard(guild_id)

@@ -194,15 +194,16 @@ class LofiDiscordBot(commands.Bot):
         if voice_client is None or not voice_client.is_connected():
             return
         if after.channel == voice_client.channel and before.channel != voice_client.channel:
-            await self._announce_member_join(member)
+            await self._announce_member_voice_event(member, "join")
             return
         if before.channel != voice_client.channel or after.channel == voice_client.channel:
             return
+        await self._announce_member_voice_event(member, "leave")
         left = await self.player_manager.leave_if_alone(member.guild)
         if left:
             LOGGER.info("Left empty voice channel guild=%s", member.guild.id)
 
-    async def _announce_member_join(self, member: discord.Member) -> None:
+    async def _announce_member_voice_event(self, member: discord.Member, event: str) -> None:
         join_announcements = getattr(self, "join_announcements", None)
         if join_announcements is None or not join_announcements.is_enabled:
             return
@@ -216,10 +217,20 @@ class LofiDiscordBot(commands.Bot):
             return
         display_name = getattr(member, "display_name", None) or getattr(member, "name", "")
         try:
-            audio_data = await join_announcements.synthesize_join(member.guild.id, display_name)
+            if event == "join":
+                audio_data = await join_announcements.synthesize_join(
+                    member.guild.id,
+                    display_name,
+                )
+            else:
+                audio_data = await join_announcements.synthesize_leave(
+                    member.guild.id,
+                    display_name,
+                )
         except Exception:
             LOGGER.exception(
-                "Join announcement TTS failed unexpectedly guild=%s member=%s",
+                "%s announcement TTS failed unexpectedly guild=%s member=%s",
+                event.title(),
                 member.guild.id,
                 member.id,
             )
@@ -228,7 +239,12 @@ class LofiDiscordBot(commands.Bot):
             return
         announced = await self.player_manager.enqueue_announcement(member.guild.id, audio_data)
         if announced:
-            LOGGER.info("Queued join announcement guild=%s member=%s", member.guild.id, member.id)
+            LOGGER.info(
+                "Queued %s announcement guild=%s member=%s",
+                event,
+                member.guild.id,
+                member.id,
+            )
 
     def begin_shutdown(self) -> None:
         self._shutting_down = True
