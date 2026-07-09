@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 import time
@@ -9,6 +10,7 @@ import aiohttp
 LOGGER = logging.getLogger(__name__)
 JOIN_ANNOUNCEMENT_TIMEOUT_SECONDS = 5.0
 JOIN_ANNOUNCEMENT_MIN_INTERVAL_SECONDS = 2.0
+JOIN_ANNOUNCEMENT_MAX_QUEUED_REQUESTS = 3
 MAX_DISPLAY_NAME_LENGTH = 32
 STARTUP_PROBE_DISPLAY_NAME = "疎通確認"
 _WHITESPACE_PATTERN = re.compile(r"\s+")
@@ -41,7 +43,8 @@ class JoinAnnouncementClient:
         self._api_url = api_url.rstrip("/") if api_url else ""
         self._api_token = api_token
         self._session: aiohttp.ClientSession | None = None
-        self._in_flight_guilds: set[int] = set()
+        self._request_locks_by_guild: dict[int, asyncio.Lock] = {}
+        self._queued_request_counts_by_guild: dict[int, int] = {}
         self._last_started_at_by_guild: dict[int, float] = {}
 
     @property
@@ -76,20 +79,37 @@ class JoinAnnouncementClient:
     ) -> bytes | None:
         if not self.is_enabled:
             return None
-        if not self._try_begin_request(guild_id):
-            return None
+
+        lock = self._request_locks_by_guild.setdefault(guild_id, asyncio.Lock())
+        queued = False
+        if lock.locked():
+            queued = self._try_reserve_queued_request(guild_id)
+            if not queued:
+                LOGGER.info(
+                    "Voice event announcement TTS queue is full guild=%s max_queue=%s",
+                    guild_id,
+                    JOIN_ANNOUNCEMENT_MAX_QUEUED_REQUESTS,
+                )
+                return None
 
         try:
-            return await self._request_synthesis(
-                {
-                    "guild_id": guild_id,
-                    "text": announcement_text,
-                    "cache": True,
-                },
-                failure_context=failure_context,
-            )
+            async with lock:
+                if queued:
+                    self._release_queued_request(guild_id)
+                    queued = False
+                await self._wait_for_request_interval(guild_id)
+                self._last_started_at_by_guild[guild_id] = time.monotonic()
+                return await self._request_synthesis(
+                    {
+                        "guild_id": guild_id,
+                        "text": announcement_text,
+                        "cache": True,
+                    },
+                    failure_context=failure_context,
+                )
         finally:
-            self._in_flight_guilds.discard(guild_id)
+            if queued:
+                self._release_queued_request(guild_id)
 
     async def probe_startup_synthesis(self) -> bool:
         if not self.is_enabled:
@@ -138,16 +158,26 @@ class JoinAnnouncementClient:
             LOGGER.exception("%s request failed", failure_context)
             return None
 
-    def _try_begin_request(self, guild_id: int) -> bool:
-        now = time.monotonic()
-        if guild_id in self._in_flight_guilds:
-            return False
+    async def _wait_for_request_interval(self, guild_id: int) -> None:
         last_started_at = self._last_started_at_by_guild.get(guild_id)
-        if (
-            last_started_at is not None
-            and now - last_started_at < JOIN_ANNOUNCEMENT_MIN_INTERVAL_SECONDS
-        ):
+        if last_started_at is None:
+            return
+        remaining_seconds = JOIN_ANNOUNCEMENT_MIN_INTERVAL_SECONDS - (
+            time.monotonic() - last_started_at
+        )
+        if remaining_seconds > 0:
+            await asyncio.sleep(remaining_seconds)
+
+    def _try_reserve_queued_request(self, guild_id: int) -> bool:
+        queued_count = self._queued_request_counts_by_guild.get(guild_id, 0)
+        if queued_count >= JOIN_ANNOUNCEMENT_MAX_QUEUED_REQUESTS:
             return False
-        self._in_flight_guilds.add(guild_id)
-        self._last_started_at_by_guild[guild_id] = now
+        self._queued_request_counts_by_guild[guild_id] = queued_count + 1
         return True
+
+    def _release_queued_request(self, guild_id: int) -> None:
+        queued_count = self._queued_request_counts_by_guild.get(guild_id, 0)
+        if queued_count <= 1:
+            self._queued_request_counts_by_guild.pop(guild_id, None)
+            return
+        self._queued_request_counts_by_guild[guild_id] = queued_count - 1
